@@ -5,6 +5,7 @@ import OutfitResult from './components/OutfitResult';
 import AuthModal from './components/AuthModal';
 import LoadingScreen from './components/LoadingScreen';
 import SavedOutfits from './pages/SavedOutfits';
+import { apiFetch } from './lib/api';
 
 export default function App() {
   const [page, setPage] = useState('home'); // home | saved
@@ -44,15 +45,13 @@ export default function App() {
       formData.append('age', preferences.age);
       formData.append('bodyType', preferences.bodyType);
 
-      const res = await fetch('/api/analyze', {
+      const data = await apiFetch('/api/analyze', {
         method: 'POST',
         body: formData,
         signal: AbortSignal.timeout(60000),
       });
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
+      if (!data.success) {
         throw new Error(data.error || 'Analysis failed');
       }
 
@@ -77,7 +76,7 @@ export default function App() {
     if (!result) return;
     setSavingOutfit(true);
     try {
-      const res = await fetch('/api/users/save-outfit', {
+      const data = await apiFetch('/api/users/save-outfit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,8 +93,6 @@ export default function App() {
           userPhotoPath: result.photoPath,
         }),
       });
-
-      const data = await res.json();
       if (data.success) {
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
