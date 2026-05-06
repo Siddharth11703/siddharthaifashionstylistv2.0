@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '../lib/api';
 
 export default function AuthModal({ onClose, onSuccess }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '' });
@@ -27,12 +28,11 @@ export default function AuthModal({ onClose, onSuccess }) {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/users/register', {
+      const data = await apiFetch('/api/users/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
       if (data.success) {
         onSuccess(data.user);
       } else {

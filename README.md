@@ -14,3 +14,14 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+
+## Deployment notes (Vercel)
+
+If your frontend is hosted on Vercel and your backend runs elsewhere, set:
+
+```
+VITE_API_BASE_URL=https://your-backend-domain.com
+```
+
+Without this, requests default to relative `/api/...` paths and Vercel may return an HTML error page, which causes JSON parse errors like `Unexpected token ... is not valid JSON`.

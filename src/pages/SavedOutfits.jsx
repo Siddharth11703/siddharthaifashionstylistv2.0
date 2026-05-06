@@ -12,8 +12,7 @@ export default function SavedOutfits({ user, onBack }) {
 
   const fetchOutfits = async () => {
     try {
-      const res = await fetch(`/api/users/outfits/${user.id}`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/users/outfits/${user.id}`);
       if (data.success) setOutfits(data.outfits);
     } catch (err) {
       console.error(err);
@@ -26,7 +25,7 @@ export default function SavedOutfits({ user, onBack }) {
     if (!confirm('Delete this outfit?')) return;
     setDeleting(outfitId);
     try {
-      await fetch(`/api/users/outfits/${outfitId}`, {
+      await apiFetch(`/api/users/outfits/${outfitId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id }),
