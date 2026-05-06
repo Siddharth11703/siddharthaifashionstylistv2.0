@@ -8,9 +8,16 @@ import Groq from 'groq-sdk';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
+const getUploadDir = () => {
+  if (process.env.VERCEL === '1') {
+    return '/tmp/uploads';
+  }
+  return path.join(__dirname, '../../uploads');
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads');
+    const uploadDir = getUploadDir();
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
