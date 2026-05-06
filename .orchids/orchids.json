@@ -1,0 +1,8 @@
+{
+  "startupCommands": [
+    "node server/index.js",
+    "npm run dev"
+  ],
+  "projectId": "77615c0f-73a0-4225-af50-cf7d53a44970",
+  "templateId": "any"
+}
