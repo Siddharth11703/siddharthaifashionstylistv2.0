@@ -27,11 +27,16 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Set server timeout to 60 seconds
-const server = app.listen(PORT, () => {
-  console.log(`\n🚀 Siddharth AI Fashion Stylist Server running on http://localhost:${PORT}`);
-  console.log(`📦 Database initialized`);
-  console.log(`🔑 Groq API: ${process.env.GROQ_API_KEY ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`🎨 Pollinations AI: ✅ Ready (no key needed)\n`);
-});
-server.timeout = 60000;
+const isVercel = process.env.VERCEL === '1';
+
+if (!isVercel) {
+  const server = app.listen(PORT, () => {
+    console.log(`\n🚀 Siddharth AI Fashion Stylist Server running on http://localhost:${PORT}`);
+    console.log('📦 Database initialized');
+    console.log(`🔑 Groq API: ${process.env.GROQ_API_KEY ? '✅ Configured' : '❌ Missing'}`);
+    console.log('🎨 Pollinations AI: ✅ Ready (no key needed)\n');
+  });
+  server.timeout = 60000;
+}
+
+export default app;

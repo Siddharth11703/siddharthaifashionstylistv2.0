@@ -6,6 +6,25 @@ import AuthModal from './components/AuthModal';
 import LoadingScreen from './components/LoadingScreen';
 import SavedOutfits from './pages/SavedOutfits';
 
+
+const parseApiResponse = async (res) => {
+  const text = await res.text();
+  const contentType = res.headers.get('content-type') || '';
+
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `Server returned ${res.status}. Make sure API routes are deployed and environment variables are configured on Vercel.`
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('Server response was not valid JSON. Please check deployment logs.');
+  }
+};
+
+
 export default function App() {
   const [page, setPage] = useState('home'); // home | saved
   const [step, setStep] = useState(0);
@@ -50,7 +69,7 @@ export default function App() {
         signal: AbortSignal.timeout(60000),
       });
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Analysis failed');
@@ -95,7 +114,7 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (data.success) {
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
