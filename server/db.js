@@ -1,10 +1,28 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '..', 'styleai.db');
 
+function resolveDbPath() {
+  if (process.env.DB_PATH) {
+    return process.env.DB_PATH;
+  }
+
+  // In serverless hosts (like Vercel), the deployment filesystem is read-only.
+  // Use /tmp so sign-in and saved outfits can write successfully.
+  if (process.env.VERCEL === '1') {
+    const dataDir = path.join(os.tmpdir(), 'styleai-data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    return path.join(dataDir, 'styleai.db');
+  }
+
+  return path.join(__dirname, '..', 'styleai.db');
+}
+
+const dbPath = resolveDbPath();
 const db = new Database(dbPath);
 
 db.exec(`
