@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PhotoUpload from './components/PhotoUpload';
 import SelectionForm from './components/SelectionForm';
 import OutfitResult from './components/OutfitResult';
@@ -6,6 +6,9 @@ import AuthModal from './components/AuthModal';
 import LoadingScreen from './components/LoadingScreen';
 import SavedOutfits from './pages/SavedOutfits';
 
+
+
+const USER_STORAGE_KEY = 'styleai_user';
 
 const parseApiResponse = async (res) => {
   const text = await res.text();
@@ -43,6 +46,26 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [savingOutfit, setSavingOutfit] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem(USER_STORAGE_KEY);
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (e) {
+      console.warn('Could not restore user session', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(USER_STORAGE_KEY);
+    }
+  }, [user]);
 
   const canProceedFromPhoto = !!photo;
   const canProceedFromPreferences =
@@ -132,6 +155,11 @@ export default function App() {
     performSave(registeredUser);
   };
 
+  const handleSignOut = () => {
+    setUser(null);
+    setPage('home');
+  };
+
   const resetApp = () => {
     setStep(0);
     setPhoto(null);
@@ -180,11 +208,19 @@ export default function App() {
               </button>
             )}
             {user ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
-                  {user.name[0].toUpperCase()}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+                    {user.name[0].toUpperCase()}
+                  </div>
+                  <span className="text-purple-300 text-sm font-medium hidden sm:block">{user.name.split(' ')[0]}</span>
                 </div>
-                <span className="text-purple-300 text-sm font-medium hidden sm:block">{user.name.split(' ')[0]}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 text-white/60 hover:text-white hover:border-red-400/50 hover:bg-red-500/10 transition-all text-sm"
+                >
+                  Sign out
+                </button>
               </div>
             ) : (
               <button
