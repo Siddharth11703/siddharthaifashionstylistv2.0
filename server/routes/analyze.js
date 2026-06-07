@@ -71,40 +71,63 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
 
 // Generate image using Pollinations AI and convert it to a data URL so the UI
 // always displays an actual Pollinations-created image without exposing API keys.
-const POLLINATIONS_IMAGE_HOSTS = [
-  'https://gen.pollinations.ai/image',
-  'https://image.pollinations.ai/prompt',
+const POLLINATIONS_IMAGE_ENDPOINTS = [
+  {
+    name: 'Pollinations authenticated image API',
+    host: 'https://gen.pollinations.ai/image',
+    requiresKey: true,
+    model: 'flux',
+    enhance: 'true',
+  },
+  {
+    name: 'Pollinations legacy public image API',
+    host: 'https://image.pollinations.ai/prompt',
+    requiresKey: false,
+  },
 ];
 
-const buildPollinationsImageUrl = (host, prompt, seed) => {
+const getPollinationsApiKey = () => process.env.POLLINATIONS_API_KEY?.trim();
+
+const buildPollinationsImageUrl = ({ host, model, enhance }, prompt, seed) => {
   const encodedPrompt = encodeURIComponent(prompt);
   const params = new URLSearchParams({
     width: '768',
     height: '1024',
-    model: 'flux',
     nologo: 'true',
-    enhance: 'true',
     seed: String(seed),
   });
 
-  if (process.env.POLLINATIONS_API_KEY) {
-    params.set('key', process.env.POLLINATIONS_API_KEY);
+  if (model) {
+    params.set('model', model);
+  }
+
+  if (enhance) {
+    params.set('enhance', enhance);
   }
 
   return `${host}/${encodedPrompt}?${params.toString()}`;
 };
 
-const stripSecretQueryParams = (imageUrl) => {
-  const safeUrl = new URL(imageUrl);
-  safeUrl.searchParams.delete('key');
-  return safeUrl.toString();
+const getPollinationsErrorMessage = (status) => {
+  if (status === 401) {
+    return 'HTTP 401 (missing or invalid Pollinations API key)';
+  }
+
+  if (status === 402) {
+    return 'HTTP 402 (Pollinations key has no available Pollen balance or this model requires paid credits)';
+  }
+
+  return `HTTP ${status}`;
 };
 
-async function fetchPollinationsImage(imageUrl) {
-  const response = await fetch(imageUrl, { signal: AbortSignal.timeout(70000) });
+async function fetchPollinationsImage(imageUrl, apiKey) {
+  const response = await fetch(imageUrl, {
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+    signal: AbortSignal.timeout(70000),
+  });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    throw new Error(getPollinationsErrorMessage(response.status));
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -120,20 +143,35 @@ async function fetchPollinationsImage(imageUrl) {
 }
 
 async function generateImageWithPollinations(prompt, seed) {
+  const apiKey = getPollinationsApiKey();
   const attempts = [];
 
-  for (const host of POLLINATIONS_IMAGE_HOSTS) {
-    const imageUrl = buildPollinationsImageUrl(host, prompt, seed);
+  for (const endpoint of POLLINATIONS_IMAGE_ENDPOINTS) {
+    if (endpoint.requiresKey && !apiKey) {
+      attempts.push(`${endpoint.name}: skipped because POLLINATIONS_API_KEY is not configured`);
+      continue;
+    }
+
+    const imageUrl = buildPollinationsImageUrl(endpoint, prompt, seed);
 
     try {
-      const { contentType, imageBuffer } = await fetchPollinationsImage(imageUrl);
+      const { contentType, imageBuffer } = await fetchPollinationsImage(
+        imageUrl,
+        endpoint.requiresKey ? apiKey : null
+      );
       return {
-        sourceUrl: stripSecretQueryParams(imageUrl),
+        sourceUrl: imageUrl,
         dataUrl: `data:${contentType};base64,${imageBuffer.toString('base64')}`,
       };
     } catch (error) {
-      attempts.push(`${host}: ${error.message}`);
+      attempts.push(`${endpoint.name}: ${error.message}`);
     }
+  }
+
+  if (!apiKey) {
+    throw new Error(
+      'Pollinations AI now requires an API key for reliable image generation. Add POLLINATIONS_API_KEY in your server/Vercel environment variables, then redeploy. The app will not show a fake fallback image.'
+    );
   }
 
   throw new Error(`Pollinations AI did not return an image. Attempts: ${attempts.join('; ')}`);

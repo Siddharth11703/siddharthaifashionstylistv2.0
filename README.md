@@ -25,4 +25,4 @@ See detailed setup: `DEPLOYMENT_VERCEL.md`.
 Server-side AI generation uses these variables:
 
 - `GROQ_API_KEY` — required for photo analysis and outfit text generation.
-- `POLLINATIONS_API_KEY` — optional but recommended for Pollinations AI image generation. Keep this server-side only; the app removes the key before returning the source image URL to the browser.
+- `POLLINATIONS_API_KEY` — required for reliable Pollinations AI image generation. Keep this server-side only; the app sends it through the backend request authorization header and never returns it to the browser.
