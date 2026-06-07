@@ -70,10 +70,18 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
 }
 
 // Generate image using Pollinations AI
+// Generate image using Pollinations AI
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
   const imageUrl = `https://image.pollinations.ai/p/${encodedPrompt}?width=768&height=1024&model=flux&nologo=true&enhance=true${seedParam}`;
+  
+  // This forces the server to wait until Pollinations actually finishes generating the image data
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Pollinations AI returned status: ${response.status}`);
+  }
+  
   return imageUrl;
 }
 
