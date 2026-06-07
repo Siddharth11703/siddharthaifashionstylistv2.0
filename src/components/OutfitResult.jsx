@@ -10,7 +10,6 @@ export default function OutfitResult({ result, onSave, saving }) {
     outfitRecommendation,
     generatedImageUrl,
     generatedImageSourceUrl,
-    generatedImageFallback,
   } = result;
 
   const imageLoaded = loadedImageUrl === generatedImageUrl;
@@ -56,23 +55,18 @@ export default function OutfitResult({ result, onSave, saving }) {
         <div className="space-y-4">
           {/* Generated Image */}
           <div className="rounded-2xl overflow-hidden glass border border-white/10">
-            {generatedImageFallback && (
-              <div className="m-3 mb-0 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
-                The live AI image service did not return an image, so a styled fallback preview is shown instead. Your outfit recommendation is still ready.
-              </div>
-            )}
             {generatedImageUrl && !imageError ? (
               <div className="relative">
                 {!imageLoaded && (
                   <div className="w-full h-96 flex flex-col items-center justify-center gap-3 bg-white/5">
                     <div className="w-10 h-10 border-2 border-purple-500/40 border-t-purple-400 rounded-full animate-spin" />
                     <p className="text-white/40 text-sm">Generating your look...</p>
-                    <p className="text-white/25 text-xs">This may take up to 30 seconds</p>
+                    <p className="text-white/25 text-xs">This may take up to 60 seconds</p>
                   </div>
                 )}
                 <img
                   src={generatedImageUrl}
-                  alt={generatedImageFallback ? 'Fallback outfit preview' : 'AI generated outfit'}
+                  alt="Pollinations AI generated outfit"
                   className={`w-full object-cover rounded-2xl transition-opacity duration-700 ${imageLoaded ? 'opacity-100' : 'opacity-0 h-0'}`}
                   onLoad={() => setLoadedImageUrl(generatedImageUrl)}
                   onError={() => setFailedImageUrl(generatedImageUrl)}
@@ -80,7 +74,7 @@ export default function OutfitResult({ result, onSave, saving }) {
                 {imageLoaded && (
                   <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                    {generatedImageFallback ? 'Fallback Preview' : 'AI Generated'} · Styled for you
+                    Pollinations AI Generated · Styled for you
                   </div>
                 )}
               </div>
@@ -89,7 +83,7 @@ export default function OutfitResult({ result, onSave, saving }) {
                 <svg className="w-12 h-12 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
                 </svg>
-                <p className="text-sm">Image could not be loaded</p>
+                <p className="text-sm">Pollinations AI image could not be loaded</p>
                 {generatedImageSourceUrl && (
                   <a
                     href={generatedImageSourceUrl}

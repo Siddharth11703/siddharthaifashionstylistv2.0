@@ -66,7 +66,7 @@ export default function App() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         body: formData,
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(120000),
       });
 
       const data = await parseApiResponse(res);

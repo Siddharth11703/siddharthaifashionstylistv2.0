@@ -19,3 +19,10 @@ If you are developing a production application, we recommend using TypeScript wi
 ## Vercel custom domain (free)
 
 See detailed setup: `DEPLOYMENT_VERCEL.md`.
+
+## Environment variables
+
+Server-side AI generation uses these variables:
+
+- `GROQ_API_KEY` — required for photo analysis and outfit text generation.
+- `POLLINATIONS_API_KEY` — optional but recommended for Pollinations AI image generation. Keep this server-side only; the app removes the key before returning the source image URL to the browser.
