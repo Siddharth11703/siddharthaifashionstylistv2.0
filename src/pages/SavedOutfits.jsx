@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export default function SavedOutfits({ user, onBack }) {
   const [outfits, setOutfits] = useState([]);
@@ -6,11 +6,7 @@ export default function SavedOutfits({ user, onBack }) {
   const [deleting, setDeleting] = useState(null);
   const [selected, setSelected] = useState(null);
 
-  useEffect(() => {
-    fetchOutfits();
-  }, [user.id]);
-
-  const fetchOutfits = async () => {
+  const fetchOutfits = useCallback(async () => {
     try {
       const res = await fetch(`/api/users/outfits/${user.id}`);
       const data = await res.json();
@@ -20,7 +16,11 @@ export default function SavedOutfits({ user, onBack }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user.id]);
+
+  useEffect(() => {
+    fetchOutfits();
+  }, [fetchOutfits]);
 
   const deleteOutfit = async (outfitId) => {
     if (!confirm('Delete this outfit?')) return;

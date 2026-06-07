@@ -1,11 +1,20 @@
 import { useState } from 'react';
 
-export default function OutfitResult({ result, onSave, user }) {
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
+export default function OutfitResult({ result, onSave, saving }) {
+  const [loadedImageUrl, setLoadedImageUrl] = useState('');
+  const [failedImageUrl, setFailedImageUrl] = useState('');
   const [activeTab, setActiveTab] = useState('outfit');
 
-  const { photoAnalysis, outfitRecommendation, generatedImageUrl } = result;
+  const {
+    photoAnalysis,
+    outfitRecommendation,
+    generatedImageUrl,
+    generatedImageSourceUrl,
+    generatedImageFallback,
+  } = result;
+
+  const imageLoaded = loadedImageUrl === generatedImageUrl;
+  const imageError = failedImageUrl === generatedImageUrl;
 
   return (
     <div className="fade-in-up space-y-6">
@@ -47,6 +56,11 @@ export default function OutfitResult({ result, onSave, user }) {
         <div className="space-y-4">
           {/* Generated Image */}
           <div className="rounded-2xl overflow-hidden glass border border-white/10">
+            {generatedImageFallback && (
+              <div className="m-3 mb-0 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+                The live AI image service did not return an image, so a styled fallback preview is shown instead. Your outfit recommendation is still ready.
+              </div>
+            )}
             {generatedImageUrl && !imageError ? (
               <div className="relative">
                 {!imageLoaded && (
@@ -58,15 +72,15 @@ export default function OutfitResult({ result, onSave, user }) {
                 )}
                 <img
                   src={generatedImageUrl}
-                  alt="AI generated outfit"
+                  alt={generatedImageFallback ? 'Fallback outfit preview' : 'AI generated outfit'}
                   className={`w-full object-cover rounded-2xl transition-opacity duration-700 ${imageLoaded ? 'opacity-100' : 'opacity-0 h-0'}`}
-                  onLoad={() => setImageLoaded(true)}
-                  onError={() => setImageError(true)}
+                  onLoad={() => setLoadedImageUrl(generatedImageUrl)}
+                  onError={() => setFailedImageUrl(generatedImageUrl)}
                 />
                 {imageLoaded && (
                   <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                    AI Generated · Styled for you
+                    {generatedImageFallback ? 'Fallback Preview' : 'AI Generated'} · Styled for you
                   </div>
                 )}
               </div>
@@ -76,6 +90,16 @@ export default function OutfitResult({ result, onSave, user }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
                 </svg>
                 <p className="text-sm">Image could not be loaded</p>
+                {generatedImageSourceUrl && (
+                  <a
+                    href={generatedImageSourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-purple-300 underline underline-offset-4 hover:text-purple-200"
+                  >
+                    Open original image request
+                  </a>
+                )}
               </div>
             )}
           </div>
@@ -176,12 +200,13 @@ export default function OutfitResult({ result, onSave, user }) {
       {/* Save Button */}
       <button
         onClick={onSave}
-        className="w-full py-4 rounded-2xl btn-primary text-white font-semibold text-base flex items-center justify-center gap-2 shadow-lg"
+        disabled={saving}
+        className="w-full py-4 rounded-2xl btn-primary text-white font-semibold text-base flex items-center justify-center gap-2 shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
         </svg>
-        Save This Outfit
+        {saving ? 'Saving...' : 'Save This Outfit'}
       </button>
     </div>
   );

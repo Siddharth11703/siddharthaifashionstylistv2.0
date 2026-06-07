@@ -349,7 +349,7 @@ export default function App() {
             <OutfitResult
               result={result}
               onSave={handleSaveOutfit}
-              user={user}
+              saving={savingOutfit}
             />
             <button
               onClick={resetApp}

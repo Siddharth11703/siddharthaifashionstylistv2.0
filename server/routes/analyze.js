@@ -69,12 +69,144 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
   return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}, ${appearanceDescription || ''}`.trim();
 }
 
-// Generate image using Pollinations AI
+const escapeXml = (value = '') => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&apos;');
+
+const wrapText = (value = '', maxChars = 48, maxLines = 4) => {
+  const words = String(value).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const lines = [];
+  let current = '';
+
+  words.forEach((word) => {
+    if (lines.length >= maxLines) return;
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  });
+
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines;
+};
+
+const svgToDataUrl = (svg) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+
+function buildFallbackOutfitImage(outfitRecommendation, photoAnalysis, occasion) {
+  const title = escapeXml(outfitRecommendation.outfitName || 'Personalized Outfit');
+  const descriptionLines = wrapText(outfitRecommendation.outfitDescription || '', 54, 5);
+  const paletteLines = wrapText(outfitRecommendation.colorPalette || '', 48, 3);
+  const skinTone = escapeXml(photoAnalysis.skinTone || 'your skin tone');
+  const look = escapeXml(photoAnalysis.ethnicAppearance || 'your look');
+  const occasionLabel = escapeXml(occasion || 'your occasion');
+
+  const descriptionSvg = descriptionLines.map((line, index) => (
+    `<text x="92" y="620" dy="${index * 30}" class="body">${escapeXml(line)}</text>`
+  )).join('');
+  const paletteSvg = paletteLines.map((line, index) => (
+    `<text x="92" y="820" dy="${index * 26}" class="small">${escapeXml(line)}</text>`
+  )).join('');
+
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="1024" viewBox="0 0 768 1024" role="img" aria-label="Generated outfit preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15091f"/>
+      <stop offset="0.45" stop-color="#32134f"/>
+      <stop offset="1" stop-color="#0f0f0f"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9333ea"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .label { font: 700 20px Inter, Arial, sans-serif; fill: #c084fc; letter-spacing: 2px; text-transform: uppercase; }
+      .title { font: 800 48px Inter, Arial, sans-serif; fill: #ffffff; }
+      .subtitle { font: 500 24px Inter, Arial, sans-serif; fill: rgba(255,255,255,0.72); }
+      .body { font: 500 23px Inter, Arial, sans-serif; fill: rgba(255,255,255,0.88); }
+      .small { font: 500 20px Inter, Arial, sans-serif; fill: rgba(255,255,255,0.68); }
+      .chip { font: 700 18px Inter, Arial, sans-serif; fill: #ffffff; }
+    </style>
+  </defs>
+  <rect width="768" height="1024" fill="url(#bg)"/>
+  <circle cx="660" cy="120" r="180" fill="#9333ea" opacity="0.18"/>
+  <circle cx="80" cy="900" r="220" fill="#ec4899" opacity="0.16"/>
+
+  <rect x="56" y="56" width="656" height="912" rx="42" fill="url(#card)" stroke="rgba(255,255,255,0.18)" filter="url(#shadow)"/>
+  <text x="92" y="132" class="label">AI Fashion Preview</text>
+  <text x="92" y="196" class="title">${title}</text>
+  <text x="92" y="238" class="subtitle">Styled for ${skinTone} · ${look}</text>
+
+  <g transform="translate(234 292)">
+    <ellipse cx="150" cy="592" rx="126" ry="24" fill="#000" opacity="0.28"/>
+    <circle cx="150" cy="72" r="52" fill="#b9825b"/>
+    <path d="M104 69c12-58 80-70 111-22 14 22 8 47-4 66-15-34-44-45-83-41-7 16-14 27-24 35-8-14-9-25 0-38z" fill="#22140f"/>
+    <path d="M94 156c22-34 91-50 112-2l24 168H69l25-166z" fill="url(#accent)"/>
+    <path d="M86 165c-36 46-54 103-63 170l44 8c10-55 25-101 52-139z" fill="#7c3aed"/>
+    <path d="M214 165c36 46 54 103 63 170l-44 8c-10-55-25-101-52-139z" fill="#ec4899"/>
+    <path d="M73 333h154l-23 244h-54l-17-169-18 169H62z" fill="#151827"/>
+    <path d="M43 574h88v36H38c-16 0-21-25 5-36z" fill="#f8fafc"/>
+    <path d="M151 574h88c26 11 21 36 5 36h-93z" fill="#f8fafc"/>
+    <rect x="68" y="316" width="164" height="24" rx="12" fill="#fbbf24"/>
+    <circle cx="150" cy="328" r="10" fill="#111827" opacity="0.75"/>
+  </g>
+
+  <rect x="92" y="520" width="584" height="2" fill="url(#accent)" opacity="0.65"/>
+  <text x="92" y="574" class="label">Complete Outfit</text>
+  ${descriptionSvg}
+
+  <g transform="translate(92 744)">
+    <rect width="170" height="46" rx="23" fill="#9333ea" opacity="0.82"/>
+    <text x="85" y="30" text-anchor="middle" class="chip">${occasionLabel}</text>
+    <rect x="190" width="134" height="46" rx="23" fill="#ec4899" opacity="0.82"/>
+    <text x="257" y="30" text-anchor="middle" class="chip">Head-to-toe</text>
+    <rect x="344" width="154" height="46" rx="23" fill="#f59e0b" opacity="0.82"/>
+    <text x="421" y="30" text-anchor="middle" class="chip">Color matched</text>
+  </g>
+
+  <text x="92" y="800" class="label">Palette Notes</text>
+  ${paletteSvg}
+  <text x="92" y="930" class="small">Fallback preview shown because the live image provider did not return an image.</text>
+</svg>`;
+
+  return svgToDataUrl(svg);
+}
+
+// Generate image using Pollinations AI and convert it to a data URL so the UI
+// does not depend on the browser loading a third-party image URL directly.
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
   const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=1024&model=flux&nologo=true&enhance=true${seedParam}`;
-  return imageUrl;
+  const response = await fetch(imageUrl, { signal: AbortSignal.timeout(45000) });
+
+  if (!response.ok) {
+    throw new Error(`Pollinations returned HTTP ${response.status}`);
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.startsWith('image/')) {
+    throw new Error(`Pollinations returned ${contentType || 'an unknown content type'}`);
+  }
+
+  const imageBuffer = Buffer.from(await response.arrayBuffer());
+  return {
+    sourceUrl: imageUrl,
+    dataUrl: `data:${contentType};base64,${imageBuffer.toString('base64')}`,
+  };
 }
 
 router.post('/analyze', upload.single('photo'), async (req, res) => {
@@ -238,11 +370,20 @@ Respond in JSON:
     ].join(', ');
 
     let generatedImageUrl = null;
+    let generatedImageSourceUrl = null;
+    let generatedImageFallback = false;
+    let generatedImageError = null;
+
     try {
       const seed = Math.floor(Math.random() * 999999);
-      generatedImageUrl = await generateImageWithPollinations(fullImagePrompt, seed);
+      const generatedImage = await generateImageWithPollinations(fullImagePrompt, seed);
+      generatedImageUrl = generatedImage.dataUrl;
+      generatedImageSourceUrl = generatedImage.sourceUrl;
     } catch (imageError) {
       console.error('Image generation error:', imageError.message);
+      generatedImageFallback = true;
+      generatedImageError = imageError.message;
+      generatedImageUrl = buildFallbackOutfitImage(outfitRecommendation, photoAnalysis, occasion);
     }
 
     res.json({
@@ -250,6 +391,9 @@ Respond in JSON:
       photoAnalysis,
       outfitRecommendation,
       generatedImageUrl,
+      generatedImageSourceUrl,
+      generatedImageFallback,
+      generatedImageError,
       photoPath: req.file.filename,
     });
   } catch (error) {

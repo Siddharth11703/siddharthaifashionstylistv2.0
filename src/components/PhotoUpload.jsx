@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef } from 'react';
 
 export default function PhotoUpload({ onPhotoSelected, photo }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -14,12 +14,12 @@ export default function PhotoUpload({ onPhotoSelected, photo }) {
     onPhotoSelected({ file, url });
   };
 
-  const handleDrop = useCallback((e) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     handleFile(file);
-  }, []);
+  };
 
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = () => setIsDragging(false);
@@ -36,6 +36,7 @@ export default function PhotoUpload({ onPhotoSelected, photo }) {
         }
       }, 100);
     } catch (err) {
+      console.error('Camera access error:', err);
       alert('Camera access denied. Please allow camera access and try again.');
     }
   };
