@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import analyzeRoutes from './routes/analyze.js';
 import userRoutes from './routes/users.js';
+import proxyRoutes from './routes/proxy.js';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // API routes
 app.use('/api', analyzeRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api', proxyRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
