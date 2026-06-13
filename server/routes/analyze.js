@@ -66,14 +66,15 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
   };
   const ageDesc = ageMap[age] || '30 years old';
 
-  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}, ${appearanceDescription || ''}`.trim();
+  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}`;
 }
 
-// Generate image using Pollinations AI
+// Generate image using Pollinations AI via backend proxy
 async function generateImageWithPollinations(prompt, seed) {
-  const encodedPrompt = encodeURIComponent(decodeURIComponent(prompt));
+  const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
-  const imageUrl = `/pollinations/prompt/${encodedPrompt}?width=768&height=1024&model=flux&nologo=true&enhance=true&nofeed=true${seedParam}`;
+  // Use relative URL so the frontend proxies through the backend
+  const imageUrl = `/api/proxy-image?prompt=${encodedPrompt}&width=768&height=1024&model=flux&nologo=true&enhance=true${seedParam}`;
   return imageUrl;
 }
 
@@ -110,7 +111,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
             },
             {
               type: 'text',
-              text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS specific person. Provide:
+              text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS specific person.
 
 1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige")
 2. gender: male/female/neutral
@@ -168,7 +169,7 @@ Respond ONLY in valid JSON:
       messages: [
         {
           role: 'system',
-          content: 'You are Siddharth, a top professional fashion stylist. You create hyper-personalized outfit recommendations. Always factor in the person\'s exact ethnic appearance, skin tone, and physical features when choosing colors and styles.',
+          content: 'You are Siddharth, a top professional fashion stylist. You create hyper-personalized outfit recommendations. Always factor in the person\'s exact ethnic appearance, skin tone, and body type to suggest colors and styles that genuinely flatter them.',
         },
         {
           role: 'user',
@@ -201,7 +202,7 @@ Respond in JSON:
   "colorPalette": "Colors and why they suit this person's specific skin tone",
   "explanation": "Why this outfit works for this person specifically",
   "stylingTips": "2-3 personalized styling tips",
-  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe — top, bottom or dress, specific shoes (type, color, material), socks if applicable, belt, watch, jewellery, bag or backpack, sunglasses if relevant, and all accessories. Include fabric textures, colors, and fit details. Do NOT describe the person's face or body."
+  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe — top, bottom or dress, specific shoes (type, color, material), socks if applicable, belt, watch, jewellery and bags"
 }`,
         },
       ],
