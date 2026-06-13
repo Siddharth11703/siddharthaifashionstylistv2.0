@@ -71,7 +71,7 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
 
 // Generate image using Pollinations AI
 async function generateImageWithPollinations(prompt, seed) {
-  const encodedPrompt = encodeURIComponent(prompt);
+  const encodedPrompt = encodeURIComponent(decodeURIComponent(prompt));
   const seedParam = seed ? `&seed=${seed}` : '';
   const imageUrl = `/pollinations/prompt/${encodedPrompt}?width=768&height=1024&model=flux&nologo=true&enhance=true&nofeed=true${seedParam}`;
   return imageUrl;
