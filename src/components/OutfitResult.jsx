@@ -56,6 +56,7 @@ export default function OutfitResult({ result, onSave, user }) {
                     <p className="text-white/25 text-xs">This may take up to 30 seconds</p>
                   </div>
                 )}
+                {console.log('Image URL:', generatedImageUrl)}
                 <img
                   src={generatedImageUrl}
                   alt="AI generated outfit"
