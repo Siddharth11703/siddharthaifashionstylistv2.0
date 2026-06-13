@@ -11,7 +11,12 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
-      },
+        },
+       '/pollinations': {
+         target: 'https://image.pollinations.ai',
+         changeOrigin: true,
+         rewrite: (path) => path.replace(/^\/pollinations/, '')
+        },
     },
   },
 })
