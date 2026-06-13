@@ -7,6 +7,14 @@ export default function OutfitResult({ result, onSave, user }) {
 
   const { photoAnalysis, outfitRecommendation, generatedImageUrl } = result;
 
+  const handleImageError = (e) => {
+    e.target.onError = null;
+    // Use a safe fallback prompt instead of trying to extract and re-encode
+    const fallbackUrl = 'https://image.pollinations.ai/prompt/professional%20business%20outfit%20portrait?width=768&height=1024';
+    e.target.src = fallbackUrl;
+    setImageError(true);
+  };
+
   return (
     <div className="fade-in-up space-y-6">
       {/* Header */}
@@ -56,17 +64,12 @@ export default function OutfitResult({ result, onSave, user }) {
                     <p className="text-white/25 text-xs">This may take up to 30 seconds</p>
                   </div>
                 )}
-                {console.log('Image URL:', generatedImageUrl)}
                 <img
                   src={generatedImageUrl}
                   alt="AI generated outfit"
                   className={`w-full object-cover rounded-2xl transition-opacity duration-700 ${imageLoaded ? 'opacity-100' : 'opacity-0 h-0'}`}
                   onLoad={() => setImageLoaded(true)}
-                  onError={(e) => {
-                    e.target.onError = null;
-                    e.target.src = `https://image.pollinations.ai/prompt/${encodeURIComponent(generatedImageUrl?.split('/prompt/')[1]?.split('?')[0] || 'professional outfit')}?width=768&height=1024&model=flux&nologo=true&enhance=true&cachebust=${Date.now()}`;
-                    setImageError(true);
-                  }}
+                  onError={handleImageError}
                 />
                 {imageLoaded && (
                   <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1.5">
@@ -184,7 +187,7 @@ export default function OutfitResult({ result, onSave, user }) {
         className="w-full py-4 rounded-2xl btn-primary text-white font-semibold text-base flex items-center justify-center gap-2 shadow-lg"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364-6.364L12 7.636z" clipRule="evenodd" />
         </svg>
         Save This Outfit
       </button>
