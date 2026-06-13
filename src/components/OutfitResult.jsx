@@ -61,7 +61,11 @@ export default function OutfitResult({ result, onSave, user }) {
                   alt="AI generated outfit"
                   className={`w-full object-cover rounded-2xl transition-opacity duration-700 ${imageLoaded ? 'opacity-100' : 'opacity-0 h-0'}`}
                   onLoad={() => setImageLoaded(true)}
-                  onError={() => setImageError(true)}
+                  onError={(e) => {
+                    e.target.onError = null;
+                    e.target.src = `https://image.pollinations.ai/prompt/${encodeURIComponent(generatedImageUrl?.split('/prompt/')[1]?.split('?')[0] || 'professional outfit')}?width=768&height=1024&model=flux&nologo=true&enhance=true&cachebust=${Date.now()}`;
+                    setImageError(true);
+                  }}
                 />
                 {imageLoaded && (
                   <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1.5">
