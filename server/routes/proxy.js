@@ -8,7 +8,7 @@ const router = express.Router();
 // This solves CORS issues by routing through the backend
 router.get('/proxy-image', async (req, res) => {
   try {
-    const { prompt, width = 768, height = 1024, model = 'flux', nologo = 'true', enhance = 'true', seed } = req.query;
+    let { prompt, width = 768, height = 1024, model = 'flux', nologo = 'true', enhance = 'true', seed } = req.query;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt parameter is required' });
@@ -24,6 +24,20 @@ router.get('/proxy-image', async (req, res) => {
       // ignore decode errors and fall back to the original prompt
       rawPrompt = prompt;
     }
+
+    // ✅ CRITICAL FIX: Truncate and simplify the prompt
+    // Pollinations AI has limits on prompt length. Keep it under 1000 chars.
+    if (rawPrompt.length > 1000) {
+      rawPrompt = rawPrompt.substring(0, 1000);
+      console.log('[proxy-image] truncated long prompt to 1000 chars');
+    }
+
+    // ✅ Remove problematic characters and excessive punctuation
+    rawPrompt = rawPrompt
+      .replace(/[<>{}[\]]/g, '') // Remove brackets and braces
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+
     const encodedPrompt = encodeURIComponent(rawPrompt);
     const seedParam = seed ? `&seed=${seed}` : '';
     const pollUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=${model}&nologo=${nologo}&enhance=${enhance}${seedParam}&cachebust=${Date.now()}`;
