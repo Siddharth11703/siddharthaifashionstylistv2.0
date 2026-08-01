@@ -69,7 +69,7 @@ if (!preferences || (typeof preferences === 'object' && Object.keys(preferences)
     console.log('📋 Preferences:', preferences);
 
     // Step 1: Analyze photo using Groq with Vision
-    const analysisResponse = await groq.messages.create({
+    const analysisResponse = await groq.chat.completions.create({
       model: 'llama-3.2-90b-vision-preview',
       max_tokens: 1024,
       messages: [
@@ -100,7 +100,7 @@ Keep it concise and factual.`,
       ],
     });
 
-    const photoAnalysis = analysisResponse.content[0].type === 'text' ? analysisResponse.content[0].text : '';
+    const photoAnalysis = analysisResponse.choices[0]?.message?.content || '';
     console.log('✅ Photo analysis complete');
 
     // Step 2: Generate outfit recommendation based on analysis and preferences
@@ -117,7 +117,7 @@ Keep it concise and factual.`,
 
 Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occasions`;
 
-    const outfitResponse = await groq.messages.create({
+    const outfitResponse = await groq.chat.completions.create({
       model: 'mixtral-8x7b-32768',
       max_tokens: 1024,
       messages: [
@@ -128,7 +128,7 @@ Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occa
       ],
     });
 
-    const outfitText = outfitResponse.content[0].type === 'text' ? outfitResponse.content[0].text : '';
+    const outfitText = outfitResponse.choices[0]?.message?.content || '';
 
     // Parse outfit recommendation
     let outfitRecommendation = {};
