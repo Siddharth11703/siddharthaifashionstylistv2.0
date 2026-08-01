@@ -58,7 +58,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     let analysisResponse;
     try {
       analysisResponse = await groq.messages.create({
-        model: 'llama-3.2-90b-vision-preview',
+        model: 'qwen/qwen3.6-27b',
         max_tokens: 1024,
         messages: [
           {
@@ -100,7 +100,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     let outfitResponse;
     try {
       outfitResponse = await groq.messages.create({
-        model: 'mixtral-8x7b-32768',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 1024,
         messages: [
           {
