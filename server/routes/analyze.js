@@ -158,21 +158,38 @@ Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occa
     console.log('✅ Outfit recommendation generated');
 
     // Step 3: Generate image prompt for outfit visualization
-    const imagePromptText = `Professional fashion model wearing ${outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors. Studio lighting, full body, elegant pose, high quality`;
+    
+    // Safety check: ensure colorPalette is an array so .join() doesn't crash the server
+    const safeColorPalette = Array.isArray(outfitRecommendation.colorPalette) 
+      ? outfitRecommendation.colorPalette 
+      : [];
 
+    const imagePromptText = `Professional fashion model wearing ${outfitRecommendation.outfitName || 'a stylish outfit'} with ${safeColorPalette.join(' and ')} colors. Studio lighting, full body, elegant pose, high quality`;
+    
     const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
     console.log('🎨 Image generation initiated');
 
+    // Safety check: ensure keyPieces is an array so frontend .map() doesn't crash
+    if (!Array.isArray(outfitRecommendation.keyPieces)) {
+      outfitRecommendation.keyPieces = typeof outfitRecommendation.keyPieces === 'string' 
+        ? [outfitRecommendation.keyPieces] 
+        : [];
+    }
+
+    // ✅ FIX: Send aliases (imageUrl & recommendation) because the frontend is expecting these exact key names
     res.json({
       photoAnalysis,
       outfitRecommendation,
+      recommendation: outfitRecommendation, // Alias added for the frontend
       generatedImageUrl,
+      imageUrl: generatedImageUrl, // Alias added for the frontend
     });
+
   } catch (error) {
     console.error('❌ Error during analysis:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       error: 'Failed to analyze photo and generate recommendation',
-      details: error.message,
+      details: error.message 
     });
   }
 });
