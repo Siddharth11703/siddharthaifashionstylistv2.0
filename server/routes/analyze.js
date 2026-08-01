@@ -13,17 +13,18 @@ const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Log whether key present (temporary debug)
+console.log('GROQ_API_KEY present:', !!process.env.GROQ_API_KEY);
+
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
 // Generate image using Pollinations AI via backend proxy
 async function generateImageWithPollinations(prompt, seed) {
-  // ✅ CRITICAL FIX: Simplify and shorten the prompt
-  // Keep prompts under 500 chars to avoid Pollinations AI errors
   let simplifiedPrompt = prompt;
-  
-  if (simplifiedPrompt.length > 500) {
+
+  if (simplifiedPrompt && simplifiedPrompt.length > 500) {
     simplifiedPrompt = simplifiedPrompt.substring(0, 500);
     console.log('[generateImageWithPollinations] truncated prompt to 500 chars');
   }
@@ -54,38 +55,39 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     console.log('📋 Preferences:', preferences);
 
     // Step 1: Analyze photo using Groq with Vision
-    const analysisResponse = await groq.messages.create({
-      model: 'llama-3.2-90b-vision-preview',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: imageMediaType,
-                data: base64Image,
+    let analysisResponse;
+    try {
+      analysisResponse = await groq.messages.create({
+        model: 'llama-3.2-90b-vision-preview',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: imageMediaType,
+                  data: base64Image,
+                },
               },
-            },
-            {
-              type: 'text',
-              text: `Analyze this photo and provide:
-1. Skin tone (e.g., fair, medium, dark, olive)
-2. Hair type and color
-3. Body type (e.g., petite, average, athletic, plus-size)
-4. Face shape (e.g., round, oval, square, oblong)
-5. Notable features (e.g., glasses, tattoos, scars - just mention if visible)
+              {
+                type: 'text',
+                text: `Analyze this photo and provide:\n1. Skin tone (e.g., fair, medium, dark, olive)\n2. Hair type and color\n3. Body type (e.g., petite, average, athletic, plus-size)\n4. Face shape (e.g., round, oval, square, oblong)\n5. Notable features (e.g., glasses, tattoos, scars - just mention if visible)\n\nKeep it concise and factual.`,
+              },
+            ],
+          },
+        ],
+      });
+    } catch (err) {
+      console.error('Groq vision API error:', err);
+      return res.status(502).json({ error: 'Vision provider error', details: err.message || String(err) });
+    }
 
-Keep it concise and factual.`,
-            },
-          ],
-        },
-      ],
-    });
-
-    const photoAnalysis = analysisResponse.content[0].type === 'text' ? analysisResponse.content[0].text : '';
+    const photoAnalysis = analysisResponse.content && analysisResponse.content[0] && analysisResponse.content[0].type === 'text'
+      ? analysisResponse.content[0].text
+      : '';
     console.log('✅ Photo analysis complete');
 
     // Step 2: Generate outfit recommendation based on analysis and preferences
@@ -93,37 +95,36 @@ Keep it concise and factual.`,
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
 
-    const outfitPrompt = `Based on this person's appearance:\n${photoAnalysis}\n\nAnd their style preferences:\n${preferencesText}\n\nProvide a personalized outfit recommendation including:
-1. Outfit name (catchy, professional title)
-2. Color palette (3-4 colors)
-3. Key pieces (5-7 items)
-4. Styling tips
-5. Occasions suitable for this outfit
+    const outfitPrompt = `Based on this person's appearance:\n${photoAnalysis}\n\nAnd their style preferences:\n${preferencesText}\n\nProvide a personalized outfit recommendation including:\n1. Outfit name (catchy, professional title)\n2. Color palette (3-4 colors)\n3. Key pieces (5-7 items)\n4. Styling tips\n5. Occasions suitable for this outfit\n\nFormat as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occasions`;
 
-Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occasions`;
+    let outfitResponse;
+    try {
+      outfitResponse = await groq.messages.create({
+        model: 'mixtral-8x7b-32768',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: outfitPrompt,
+          },
+        ],
+      });
+    } catch (err) {
+      console.error('Groq outfit API error:', err);
+      return res.status(502).json({ error: 'Outfit provider error', details: err.message || String(err) });
+    }
 
-    const outfitResponse = await groq.messages.create({
-      model: 'mixtral-8x7b-32768',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: outfitPrompt,
-        },
-      ],
-    });
-
-    const outfitText = outfitResponse.content[0].type === 'text' ? outfitResponse.content[0].text : '';
+    const outfitText = outfitResponse.content && outfitResponse.content[0] && outfitResponse.content[0].type === 'text'
+      ? outfitResponse.content[0].text
+      : '';
 
     // Parse outfit recommendation
     let outfitRecommendation = {};
     try {
-      // Try to extract JSON from the response
       const jsonMatch = outfitText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         outfitRecommendation = JSON.parse(jsonMatch[0]);
       } else {
-        // Fallback if no JSON found
         outfitRecommendation = {
           outfitName: 'Personalized Outfit',
           colorPalette: ['Navy', 'White', 'Gold'],
@@ -145,7 +146,7 @@ Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occa
     console.log('✅ Outfit recommendation generated');
 
     // Step 3: Generate image prompt for outfit visualization
-    const imagePromptText = `Professional fashion model wearing ${outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors. Studio lighting, full body, elegant pose, high quality`;
+    const imagePromptText = `Professional fashion model wearing ${outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors.`;
 
     const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
     console.log('🎨 Image generation initiated');
