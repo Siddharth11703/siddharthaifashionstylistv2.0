@@ -70,7 +70,7 @@ if (!preferences || (typeof preferences === 'object' && Object.keys(preferences)
 
     // Step 1: Analyze photo using Groq with Vision
     const analysisResponse = await groq.chat.completions.create({
-      model: 'llama-3.2-90b-vision-preview',
+      model: 'qwen/qwen3.6-27b',
       max_tokens: 1024,
       messages: [
         {
@@ -101,7 +101,7 @@ Keep it concise and factual.`,
     const photoAnalysis = analysisResponse.choices[0]?.message?.content || '';
     console.log('✅ Photo analysis complete');
 
-    // Step 2: Generate outfit recommendation based on analysis and preferences
+  // Step 2: Generate outfit recommendation based on analysis and preferences
     const preferencesText = Object.entries(preferences)
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
@@ -116,7 +116,7 @@ Keep it concise and factual.`,
 Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occasions`;
 
     const outfitResponse = await groq.chat.completions.create({
-      model: 'mixtral-8x7b-32768',
+      model: 'llama-3.3-70b-versatile', // 👈 Fix: Updated from deprecated mixtral-8x7b-32768
       max_tokens: 1024,
       messages: [
         {
