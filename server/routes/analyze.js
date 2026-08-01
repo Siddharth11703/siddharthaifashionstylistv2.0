@@ -41,11 +41,25 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       return res.status(400).json({ error: 'No photo provided' });
     }
 
-    const { preferences } = req.body;
+    let preferences = req.body.preferences;
 
-    if (!preferences) {
-      return res.status(400).json({ error: 'No preferences provided' });
-    }
+// Parse preferences if passed as a JSON string from formdata
+if (typeof preferences === 'string') {
+  try {
+    preferences = JSON.parse(preferences);
+  } catch (e) {
+    console.error('Failed to parse preferences string:', e);
+  }
+}
+
+// Fallback to req.body directly if preferences was not wrapped
+if (!preferences) {
+  preferences = req.body;
+}
+
+if (!preferences || (typeof preferences === 'object' && Object.keys(preferences).length === 0)) {
+  return res.status(400).json({ error: 'No preferences provided' });
+}
 
     // Convert image to base64
     const base64Image = req.file.buffer.toString('base64');
