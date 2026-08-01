@@ -176,13 +176,16 @@ Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occa
         : [];
     }
 
-    // ✅ FIX: Send aliases (imageUrl & recommendation) because the frontend is expecting these exact key names
+   // ✅ FIX: Send a bulletproof payload. 
+    // Added 'success: true' and multiple aliases to ensure the frontend finds exactly what it expects.
     res.json({
+      success: true, 
       photoAnalysis,
       outfitRecommendation,
-      recommendation: outfitRecommendation, // Alias added for the frontend
+      outfit: outfitRecommendation,         // Added alias
+      recommendation: outfitRecommendation, // Added alias
       generatedImageUrl,
-      imageUrl: generatedImageUrl, // Alias added for the frontend
+      imageUrl: generatedImageUrl,          // Added alias
     });
 
   } catch (error) {
@@ -192,7 +195,7 @@ Format as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occa
       details: error.message 
     });
   }
-});
+}); 
 
 // Outfit history endpoint
 router.get('/outfits', async (req, res) => {
