@@ -76,15 +76,17 @@ if (!preferences || (typeof preferences === 'object' && Object.keys(preferences)
         {
           role: 'user',
           content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: imageMediaType,
-                data: base64Image,
-              },
-            },
-            {
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:${imageMediaType};base64,${base64Image}`,
+          },
+        },
+        {
+          type: 'text',
+          text: `Analyze this photo and provide: 1. Skin tone (e.g., fair, medium, dark, olive) 2. Hair type and color 3. Body type (e.g., petite, average, athletic, plus-size) 4. Face shape (e.g., round, oval, square, oblong) 5. Notable features (e.g., glasses, tattoos, scars - just mention if visible) Keep it concise and factual.`,
+        },
+      ],
               type: 'text',
               text: `Analyze this photo and provide:
 1. Skin tone (e.g., fair, medium, dark, olive)
