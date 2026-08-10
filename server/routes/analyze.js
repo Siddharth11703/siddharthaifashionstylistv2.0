@@ -87,7 +87,9 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
   };
   const ageDesc = ageMap[age] || '30 years old';
 
-  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}${appearanceDescription ? `, ${appearanceDescription}` : ''}`;
+  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${
+    hairDescription ? `, ${hairDescription}` : ''
+  }${faceDescription ? `, ${faceDescription}` : ''}${appearanceDescription ? `, ${appearanceDescription}` : ''}`;
 }
 
 function normalizePreference(value) {
@@ -101,7 +103,7 @@ function buildOccasionGuidance(occasion) {
   const rules = [
     {
       matches: ['wedding', 'marriage', 'bridal', 'bride', 'groom', 'sangeet', 'mehendi', 'reception', 'haldi'],
-      guidance: 'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, office or gymwear',
+      guidance: 'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, officewear, or gymwear',
     },
     {
       matches: ['party', 'club', 'birthday', 'celebration'],
@@ -132,6 +134,57 @@ function buildOccasionGuidance(occasion) {
     label: normalizedOccasion || 'the requested occasion',
     specificity,
   };
+}
+
+// Strong negative instructions inserted into prompts to avoid underwear/nudity
+const NEGATIVE_INSTRUCTIONS = 'STRICT_NEGATIVE: no nudity, no underwear, not shirtless, no lingerie, no swimsuits, no exposed torso, avoid underwear-only poses, no explicit content.';
+
+// Helper: validate generated image using Groq vision model (returns { nsfwProbability, similarity, explanation })
+async function validateImageWithGroq(groqClient, imageUrl, outfitText) {
+  try {
+    const response = await groqClient.chat.completions.create({
+      model: GROQ_VISION_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: imageUrl },
+            },
+            {
+              type: 'text',
+              text: `You are an image validation assistant. Analyze the provided image and compare it to the provided outfit description. Respond ONLY in strict JSON with fields: {"nsfwProbability": number between 0 and 1, "similarity": number between 0 and 1, "explanation": string}.
+
+Outfit description (for comparison): ${outfitText}
+
+Instructions:
+1) Return nsfwProbability = probability the image contains nudity, underwear-only, or sexual content (0.0-1.0).
+2) Return similarity = how well the image matches the outfit description (0.0 = unrelated, 1.0 = exact match). Use a CLIP-like comparison.
+3) Provide a short explanation field describing major mismatches (e.g., "image shows underwear and exposed torso", or "image shows casual T-shirt and jeans instead of sherwani").
+
+Respond only with JSON and nothing else.
+`,
+            },
+          ],
+        },
+      ],
+      max_tokens: 400,
+    });
+
+    const raw = response.choices[0].message.content;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { nsfwProbability: 1.0, similarity: 0.0, explanation: 'No JSON response from validator' };
+    const parsed = JSON.parse(match[0]);
+    return {
+      nsfwProbability: Number(parsed.nsfwProbability) || 0,
+      similarity: Number(parsed.similarity) || 0,
+      explanation: String(parsed.explanation || ''),
+    };
+  } catch (err) {
+    console.warn('Image validation failed:', err?.message || err);
+    return { nsfwProbability: 1.0, similarity: 0.0, explanation: 'Validation service error' };
+  }
 }
 
 // Generate image using Pollinations AI (returns url + srcset)
@@ -196,7 +249,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
               },
               {
                 type: 'text',
-                text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS specific person. Provide:
+                text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS. Return ONLY valid JSON with the fields listed below.
 
 1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige")
 2. gender: male/female/neutral
@@ -234,7 +287,7 @@ Respond ONLY in valid JSON:
       messages: [
         {
           role: 'system',
-          content: 'You are Siddharth, a top professional fashion stylist. You create hyper-personalized outfit recommendations. The requested occasion is mandatory: never return a generic outfit when a formal, festive, wedding, business, party, date, athletic, or other specific occasion is provided. Always factor in the person\'s exact ethnic appearance, skin tone, and physical features when choosing colors and styles.',
+          content: 'You are Siddharth, a top professional fashion stylist. You create hyper-personalized outfit recommendations. The requested occasion is mandatory: never return a generic outfit. Always include specific fabric, color, fit, accessories and explain why it suits the person.',
         },
         {
           role: 'user',
@@ -258,7 +311,7 @@ Preferences:
 
 Provide:
 1. A complete, elaborative outfit breakdown that is specific to the occasion and budget.
-2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory/headwear, scarf/dupatta/tie/pocket square when relevant, and any culturally appropriate occasion pieces.
+2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory, and headwear when applicable.
 3. For each item, include color, fabric/material, texture/finish, fit/silhouette, and small design details.
 4. Why this outfit suits their appearance, body type, skin tone, ethnic appearance, and the exact occasion dress code.
 5. Styling tips personalized to their look.
@@ -266,12 +319,13 @@ Provide:
 Respond in JSON:
 {
   "outfitName": "Short catchy name",
-  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/materials, texture/finish, fit, shoes, and occasion-specific details. Do not be brief.",
+  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/materials and trims.",
   "colorPalette": "Detailed 3-5 sentence explanation of the colors and why they suit this person's specific skin tone and the occasion",
   "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",
   "stylingTips": "3-5 personalized styling tips, including how to place or pair accessories",
-  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe and explicitly naming the occasion as ${occasionGuidance.label}. Include every visible attire item and accessory from outfitDescription: primary garment, inner/outer layers, bottoms, shoes, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory/headwear, scarf/dupatta/tie/pocket square when relevant, and culturally appropriate occasion pieces. Include fabric textures, colors, fit details, and a phrase that says this is not casual everyday clothing unless the requested occasion is casual. You MAY include a short face/skin/hair descriptor that will help match the uploaded REFERENCE_IMAGE when generating. Do NOT include identity metadata or personal names."
-}`,
+  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe and explicitly naming the occasion as ${occasionGuidance.label}. Include every visible attire item and accessory and finish with clear photographic instructions.",
+}
+`,
         },
       ],
       max_tokens: 1800,
@@ -294,15 +348,15 @@ Respond in JSON:
     const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
 
     // Prepend the reference image line and add strict instructions to preserve face identity
-    const fullImagePrompt = [
+    const baseImagePromptParts = [
       `REFERENCE_IMAGE: ${uploadedUrl}`, // explicit reference image
-      `Photorealistic full body fashion photography of ${appearanceDesc}`,
+      `A full-length photorealistic fashion photograph of ${appearanceDesc}`,
       `standing upright in a confident natural pose, feet flat on ground, both feet and shoes fully visible`,
       `MANDATORY OCCASION: ${occasionGuidance.label}; dress code must be ${occasionGuidance.specificity}`,
       `wearing this exact elaborative outfit: ${outfitRecommendation.outfitDescription}`,
       `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch, scarf, dupatta, tie, pocket square, headwear or hair accessory when present`,
       `image detail prompt: ${outfitRecommendation.imagePrompt}`,
-      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly — preserve identity, facial proportions, hairline, skin tone and eyes. Full body must be visible from head to toes; do NOT crop the head, torso, legs or feet. Reproduce clothing details exactly.`,
+      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly — preserve identity, facial proportions, hairline, skin tone and eyes. Full body must be visible from head to toes; do NOT crop.`,
       `the outfit must visually communicate ${occasionGuidance.label} immediately; avoid generic casual clothing, plain t-shirts, basic jeans, gymwear, or office wear unless explicitly requested`,
       `complete outfit visible from head to toe including shoes, socks if applicable, belt, watch, jewellery, bag and all accessories`,
       `shoes clearly detailed — leather texture, sole, laces or straps fully visible`,
@@ -311,17 +365,58 @@ Respond in JSON:
       `ultra high resolution 4K, magazine cover quality, photorealistic skin and fabric textures`,
       `the model looks like a real ${photoAnalysis.ethnicAppearance} person`,
       `camera angle: straight on, full-length shot, neutral expression`,
-    ].join(', ');
+    ];
+
+    // Append strong negative instructions so the generator avoids underwear/nudity
+    baseImagePromptParts.push(NEGATIVE_INSTRUCTIONS);
+
+    const maxAttempts = parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '3', 10);
+    const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
+    const similarityThreshold = parseFloat(process.env.SIMILARITY_THRESHOLD || '0.30');
 
     let generatedImageUrl = null;
     let generatedImageSrcSet = null;
-    try {
-      const seed = Math.floor(Math.random() * 999999);
-      const imageResult = await generateImageWithPollinations(fullImagePrompt, seed);
-      generatedImageUrl = imageResult.url;
-      generatedImageSrcSet = imageResult.srcset;
-    } catch (imageError) {
-      console.error('Image generation error:', imageError.message);
+    let imageValidation = { nsfwProbability: 1, similarity: 0, explanation: 'not validated' };
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const seed = Math.floor(Math.random() * 999999);
+
+        // For later attempts, increase emphasis on the outfit name and wearing verb
+        let promptParts = [...baseImagePromptParts];
+        if (attempt > 1) {
+          promptParts.unshift(`The subject is clearly wearing: ${outfitRecommendation.outfitName}`);
+          promptParts.push('Emphasize: full outfit clearly visible and distinct from underwear or casual wear');
+        }
+
+        const fullImagePrompt = promptParts.join(', ');
+
+        const imageResult = await generateImageWithPollinations(fullImagePrompt, seed);
+        generatedImageUrl = imageResult.url;
+        generatedImageSrcSet = imageResult.srcset;
+
+        // Validate the generated image using Groq vision model
+        imageValidation = await validateImageWithGroq(groq, generatedImageUrl, `${outfitRecommendation.outfitName}: ${outfitRecommendation.outfitDescription}`);
+
+        // Accept if passes thresholds
+        if (imageValidation.nsfwProbability <= nsfwThreshold && imageValidation.similarity >= similarityThreshold) {
+          break; // good image
+        }
+
+        // Otherwise log and retry (unless last attempt)
+        console.warn(`Image validation attempt ${attempt} failed: nsfw=${imageValidation.nsfwProbability}, sim=${imageValidation.similarity}. Explanation: ${imageValidation.explanation}`);
+
+        // continue loop to retry
+      } catch (imageError) {
+        console.error('Image generation error on attempt', attempt, imageError?.message || imageError);
+      }
+    }
+
+    // If final image still fails, set generatedImageUrl to null so frontend can show fallback
+    if (imageValidation.nsfwProbability > nsfwThreshold || imageValidation.similarity < similarityThreshold) {
+      console.warn('Final generated image did not pass validation. Returning null image to frontend. Validation:', imageValidation);
+      generatedImageUrl = null;
+      generatedImageSrcSet = null;
     }
 
     res.json({
@@ -332,6 +427,7 @@ Respond in JSON:
       generatedImageSrcSet,
       photoPath: req.file.filename,
       referenceImageUrl: uploadedUrl,
+      imageValidation,
     });
   } catch (error) {
     console.error('Analysis error:', error);
