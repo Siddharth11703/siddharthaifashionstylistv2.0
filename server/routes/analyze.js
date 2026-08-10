@@ -8,6 +8,9 @@ import Groq from 'groq-sdk';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
+const GROQ_TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile';
+
 const getUploadDir = () => {
   if (process.env.VERCEL === '1') {
     return '/tmp/uploads';
@@ -28,6 +31,25 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+
+function getFallbackPhotoAnalysis() {
+  return {
+    skinTone: 'medium',
+    gender: 'neutral',
+    hairDescription: 'dark hair',
+    faceDescription: 'neutral facial features',
+    ethnicAppearance: 'South Asian',
+    appearanceDescription: 'stylish individual',
+    styleFeatures: 'casual style',
+  };
+}
+
+function parsePhotoAnalysis(rawText) {
+  const jsonMatch = rawText?.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return getFallbackPhotoAnalysis();
+  return JSON.parse(jsonMatch[0]);
+}
 
 // Build a hyper-specific appearance prompt so the model matches the user
 function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
@@ -141,22 +163,26 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     const base64Photo = photoData.toString('base64');
     const mimeType = req.file.mimetype;
 
-    // Step 1: Deep photo analysis — extract appearance details to replicate the person
-    const visionResponse = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Photo}`,
+    // Step 1: Deep photo analysis — extract appearance details to replicate the person.
+    // If the configured vision model is unavailable in production, continue with a
+    // safe fallback instead of failing the whole /analyze request.
+    let photoAnalysis = getFallbackPhotoAnalysis();
+    try {
+      const visionResponse = await groq.chat.completions.create({
+        model: GROQ_VISION_MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Photo}`,
+                },
               },
-            },
-            {
-              type: 'text',
-              text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS specific person. Provide:
+              {
+                type: 'text',
+                text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS specific person. Provide:
 
 1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige")
 2. gender: male/female/neutral
@@ -176,41 +202,21 @@ Respond ONLY in valid JSON:
   "appearanceDescription": "",
   "styleFeatures": ""
 }`,
-            },
-          ],
-        },
-      ],
-      max_tokens: 600,
-    });
+              },
+            ],
+          },
+        ],
+        max_tokens: 600,
+      });
 
-    let photoAnalysis;
-    try {
-      const rawText = visionResponse.choices[0].message.content;
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      photoAnalysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-        skinTone: 'medium',
-        gender: 'neutral',
-        hairDescription: 'dark hair',
-        faceDescription: 'neutral facial features',
-        ethnicAppearance: 'South Asian',
-        appearanceDescription: 'person with medium build',
-        styleFeatures: 'casual style',
-      };
-    } catch {
-      photoAnalysis = {
-        skinTone: 'medium',
-        gender: 'neutral',
-        hairDescription: 'dark hair',
-        faceDescription: 'neutral facial features',
-        ethnicAppearance: 'South Asian',
-        appearanceDescription: 'stylish individual',
-        styleFeatures: 'casual style',
-      };
+      photoAnalysis = parsePhotoAnalysis(visionResponse.choices[0].message.content);
+    } catch (visionError) {
+      console.warn(`Vision analysis failed with model ${GROQ_VISION_MODEL}:`, visionError.message);
     }
 
     // Step 2: Generate outfit recommendation text with persona-aware styling
     const textResponse = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: GROQ_TEXT_MODEL,
       messages: [
         {
           role: 'system',
