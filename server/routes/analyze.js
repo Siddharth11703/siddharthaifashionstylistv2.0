@@ -13,6 +13,76 @@ const router = express.Router();
 const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
 const GROQ_TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile';
 
+const isJsonValidationError = (error) => {
+  const message = error?.message || '';
+  const code = error?.error?.code || error?.code || '';
+  return code === 'json_validate_failed' || message.includes('json_validate_failed');
+};
+
+const parseJsonObject = (rawText) => {
+  if (!rawText) return null;
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      return null;
+    }
+  }
+};
+
+const withJsonRetryMessage = (messages) => [
+  ...messages,
+  {
+    role: 'user',
+    content: 'Your previous response was not valid JSON. Return only one parseable JSON object that matches the requested keys. No markdown, no prose, no code fences.',
+  },
+];
+
+async function createGroqJsonCompletion(groq, params, { forcePlainJson = false } = {}) {
+  try {
+    return await groq.chat.completions.create({
+      ...params,
+      temperature: 0.2,
+      ...(forcePlainJson ? {} : { response_format: { type: 'json_object' } }),
+    });
+  } catch (error) {
+    if (!isJsonValidationError(error)) {
+      throw error;
+    }
+
+    console.warn(`Groq JSON mode validation failed for ${params.model}; retrying without response_format.`);
+    return groq.chat.completions.create({
+      ...params,
+      temperature: 0,
+    });
+  }
+}
+
+async function createGroqParsedJsonCompletion(groq, params) {
+  const firstResponse = await createGroqJsonCompletion(groq, params);
+  const firstRawText = firstResponse.choices[0].message.content;
+  const firstParsed = parseJsonObject(firstRawText);
+
+  if (firstParsed) return firstParsed;
+
+  console.warn(`Groq returned malformed JSON for ${params.model}; retrying with stricter JSON instructions.`);
+  const retryResponse = await createGroqJsonCompletion(
+    groq,
+    {
+      ...params,
+      messages: withJsonRetryMessage(params.messages),
+    },
+    { forcePlainJson: true },
+  );
+  return parseJsonObject(retryResponse.choices[0].message.content);
+}
+
 const getUploadDir = () => {
   if (process.env.VERCEL === '1') {
     return '/tmp/uploads';
@@ -35,8 +105,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Build a hyper-specific appearance prompt so the model matches the user
-function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
-  const { skinTone, gender, hairDescription, faceDescription, appearanceDescription } = photoAnalysis;
+function buildAppearanceDescriptor(resolvedPhotoAnalysis, height, bodyType, age) {
+  const { skinTone, gender, hairDescription, faceDescription, appearanceDescription } = resolvedPhotoAnalysis;
 
   const genderMap = {
     male: 'man',
@@ -87,7 +157,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
   res.setTimeout(60000);
 
   try {
-    const { occasion, budget, height, age, bodyType } = req.body;
+    const { occasion, budget, height, age, bodyType } = req.body || {};
 
     if (!req.file) {
       return res.status(400).json({ error: 'No photo uploaded' });
@@ -101,7 +171,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     const mimeType = req.file.mimetype;
 
     // Step 1: Deep photo analysis — extract appearance details to replicate the person
-    const visionResponse = await groq.chat.completions.create({
+    const photoAnalysis = await createGroqParsedJsonCompletion(groq, {
       model: GROQ_VISION_MODEL,
       messages: [
         {
@@ -125,7 +195,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
 6. appearanceDescription: 1-sentence holistic description
 7. styleFeatures: any current style elements visible
 
-Respond ONLY in valid JSON:
+Return exactly one valid JSON object. Do not include markdown, comments, trailing commas, or extra text. JSON schema:
 {
   "skinTone": "",
   "gender": "",
@@ -140,36 +210,25 @@ Respond ONLY in valid JSON:
         },
       ],
       max_completion_tokens: 600,
-      response_format: { type: 'json_object' },
     });
 
-    let photoAnalysis;
-    try {
-      const rawText = visionResponse.choices[0].message.content;
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      photoAnalysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {
-        skinTone: 'medium',
-        gender: 'neutral',
-        hairDescription: 'dark hair',
-        faceDescription: 'neutral facial features',
-        ethnicAppearance: 'South Asian',
-        appearanceDescription: 'person with medium build',
-        styleFeatures: 'casual style',
-      };
-    } catch {
-      photoAnalysis = {
-        skinTone: 'medium',
-        gender: 'neutral',
-        hairDescription: 'dark hair',
-        faceDescription: 'neutral facial features',
-        ethnicAppearance: 'South Asian',
-        appearanceDescription: 'stylish individual',
-        styleFeatures: 'casual style',
-      };
+
+    if (!photoAnalysis) {
+      console.warn('Groq vision response could not be parsed; using safe default photo analysis.');
     }
 
+    const resolvedPhotoAnalysis = photoAnalysis || {
+      skinTone: 'medium',
+      gender: 'neutral',
+      hairDescription: 'dark hair',
+      faceDescription: 'neutral facial features',
+      ethnicAppearance: 'South Asian',
+      appearanceDescription: 'stylish individual',
+      styleFeatures: 'casual style',
+    };
+
     // Step 2: Generate outfit recommendation text with persona-aware styling
-    const textResponse = await groq.chat.completions.create({
+    const outfitRecommendation = await createGroqParsedJsonCompletion(groq, {
       model: GROQ_TEXT_MODEL,
       messages: [
         {
@@ -181,12 +240,12 @@ Respond ONLY in valid JSON:
           content: `Create a detailed outfit recommendation for a person with the following profile:
 
 Photo Analysis:
-- Skin Tone: ${photoAnalysis.skinTone}
-- Gender: ${photoAnalysis.gender}
-- Ethnic Appearance: ${photoAnalysis.ethnicAppearance}
-- Hair: ${photoAnalysis.hairDescription}
-- Face: ${photoAnalysis.faceDescription}
-- Appearance: ${photoAnalysis.appearanceDescription}
+- Skin Tone: ${resolvedPhotoAnalysis.skinTone}
+- Gender: ${resolvedPhotoAnalysis.gender}
+- Ethnic Appearance: ${resolvedPhotoAnalysis.ethnicAppearance}
+- Hair: ${resolvedPhotoAnalysis.hairDescription}
+- Face: ${resolvedPhotoAnalysis.faceDescription}
+- Appearance: ${resolvedPhotoAnalysis.appearanceDescription}
 
 Preferences:
 - Occasion: ${occasion}
@@ -200,7 +259,7 @@ Provide:
 2. Why this outfit suits their appearance, body type, and occasion
 3. Styling tips personalized to their look
 
-Respond in JSON:
+Return exactly one valid JSON object. Do not include markdown, comments, trailing commas, or extra text. JSON schema:
 {
   "outfitName": "Short catchy name",
   "outfitDescription": "Detailed outfit description with exact items and colors",
@@ -212,24 +271,14 @@ Respond in JSON:
         },
       ],
       max_completion_tokens: 1200,
-      response_format: { type: 'json_object' },
     });
-
-    let outfitRecommendation;
-    try {
-      const rawText = textResponse.choices[0].message.content;
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      outfitRecommendation = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-    } catch {
-      outfitRecommendation = null;
-    }
 
     if (!outfitRecommendation) {
       return res.status(500).json({ error: 'Failed to generate outfit recommendation' });
     }
 
     // Step 3: Build a person-matching image prompt for Pollinations AI
-    const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
+    const appearanceDesc = buildAppearanceDescriptor(resolvedPhotoAnalysis, height, bodyType, age);
 
     const fullImagePrompt = [
       `Photorealistic full body fashion photography of ${appearanceDesc}`,
@@ -240,7 +289,7 @@ Respond in JSON:
       `entire body in frame: head, torso, arms, legs, feet — nothing cropped`,
       `clean white seamless studio background, professional fashion editorial lighting, sharp crisp details throughout`,
       `ultra high resolution 4K, magazine cover quality, photorealistic skin and fabric textures`,
-      `the model looks like a real ${photoAnalysis.ethnicAppearance} person`,
+      `the model looks like a real ${resolvedPhotoAnalysis.ethnicAppearance} person`,
       `camera angle: straight on, full-length shot, neutral expression`,
     ].join(', ');
 
@@ -254,7 +303,7 @@ Respond in JSON:
 
     res.json({
       success: true,
-      photoAnalysis,
+      photoAnalysis: resolvedPhotoAnalysis,
       outfitRecommendation,
       generatedImageUrl,
       photoPath: req.file.filename,
