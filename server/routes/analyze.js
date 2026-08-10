@@ -8,6 +8,11 @@ import Groq from 'groq-sdk';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
+// Current GroqCloud model IDs. Keep these configurable so deprecated/removed
+// models can be replaced from the environment without another deployment.
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
+const GROQ_TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile';
+
 const getUploadDir = () => {
   if (process.env.VERCEL === '1') {
     return '/tmp/uploads';
@@ -97,7 +102,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
 
     // Step 1: Deep photo analysis — extract appearance details to replicate the person
     const visionResponse = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      model: GROQ_VISION_MODEL,
       messages: [
         {
           role: 'user',
@@ -134,7 +139,8 @@ Respond ONLY in valid JSON:
           ],
         },
       ],
-      max_tokens: 600,
+      max_completion_tokens: 600,
+      response_format: { type: 'json_object' },
     });
 
     let photoAnalysis;
@@ -164,7 +170,7 @@ Respond ONLY in valid JSON:
 
     // Step 2: Generate outfit recommendation text with persona-aware styling
     const textResponse = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: GROQ_TEXT_MODEL,
       messages: [
         {
           role: 'system',
@@ -205,7 +211,8 @@ Respond in JSON:
 }`,
         },
       ],
-      max_tokens: 1200,
+      max_completion_tokens: 1200,
+      response_format: { type: 'json_object' },
     });
 
     let outfitRecommendation;
