@@ -32,7 +32,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-
 function getFallbackPhotoAnalysis() {
   return {
     skinTone: 'medium',
@@ -88,9 +87,8 @@ function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
   };
   const ageDesc = ageMap[age] || '30 years old';
 
-  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}, ${appearanceDescription || ''}`.trim();
+  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}${appearanceDescription ? `, ${appearanceDescription}` : ''}`;
 }
-
 
 function normalizePreference(value) {
   return String(value || '').trim();
@@ -103,7 +101,7 @@ function buildOccasionGuidance(occasion) {
   const rules = [
     {
       matches: ['wedding', 'marriage', 'bridal', 'bride', 'groom', 'sangeet', 'mehendi', 'reception', 'haldi'],
-      guidance: 'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, office, streetwear, gym, or plain everyday clothing',
+      guidance: 'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, office or gymwear',
     },
     {
       matches: ['party', 'club', 'birthday', 'celebration'],
@@ -136,12 +134,26 @@ function buildOccasionGuidance(occasion) {
   };
 }
 
-// Generate image using Pollinations AI
+// Generate image using Pollinations AI (returns url + srcset)
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
-  const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=1024&model=flux&nologo=true&enhance=true${seedParam}`;
-  return imageUrl;
+
+  // Request multiple sizes and return a srcset so the browser can pick the right density
+  const widths = [768, 1536, 2048, 3072]; // include larger widths for high-DPI
+  const srcParts = widths.map((w) => {
+    const h = Math.round((w * 4) / 3); // keep 3:4 aspect ratio (width:height)
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=true${seedParam} ${w}w`;
+  });
+
+  const defaultWidth = 1536;
+  const defaultHeight = Math.round((defaultWidth * 4) / 3);
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=true${seedParam}`;
+
+  return {
+    url: defaultUrl,
+    srcset: srcParts.join(', '),
+  };
 }
 
 router.post('/analyze', upload.single('photo'), async (req, res) => {
@@ -163,9 +175,11 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     const base64Photo = photoData.toString('base64');
     const mimeType = req.file.mimetype;
 
+    // Build publicly-accessible URL to uploaded file so generation service can use it as a reference.
+    // Note: in production behind a different host you may need to build the absolute URL differently.
+    const uploadedUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+
     // Step 1: Deep photo analysis — extract appearance details to replicate the person.
-    // If the configured vision model is unavailable in production, continue with a
-    // safe fallback instead of failing the whole /analyze request.
     let photoAnalysis = getFallbackPhotoAnalysis();
     try {
       const visionResponse = await groq.chat.completions.create({
@@ -256,7 +270,7 @@ Respond in JSON:
   "colorPalette": "Detailed 3-5 sentence explanation of the colors and why they suit this person's specific skin tone and the occasion",
   "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",
   "stylingTips": "3-5 personalized styling tips, including how to place or pair accessories",
-  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe and explicitly naming the occasion as ${occasionGuidance.label}. Include every visible attire item and accessory from outfitDescription: primary garment, inner/outer layers, bottoms, shoes, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory/headwear, scarf/dupatta/tie/pocket square when relevant, and culturally appropriate occasion pieces. Include fabric textures, colors, fit details, and a phrase that says this is not casual everyday clothing unless the requested occasion is casual. Do NOT describe the person's face or body."
+  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe and explicitly naming the occasion as ${occasionGuidance.label}. Include every visible attire item and accessory from outfitDescription: primary garment, inner/outer layers, bottoms, shoes, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory/headwear, scarf/dupatta/tie/pocket square when relevant, and culturally appropriate occasion pieces. Include fabric textures, colors, fit details, and a phrase that says this is not casual everyday clothing unless the requested occasion is casual. You MAY include a short face/skin/hair descriptor that will help match the uploaded REFERENCE_IMAGE when generating. Do NOT include identity metadata or personal names."
 }`,
         },
       ],
@@ -279,13 +293,16 @@ Respond in JSON:
     // Step 3: Build a person-matching image prompt for Pollinations AI
     const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
 
+    // Prepend the reference image line and add strict instructions to preserve face identity
     const fullImagePrompt = [
+      `REFERENCE_IMAGE: ${uploadedUrl}`, // explicit reference image
       `Photorealistic full body fashion photography of ${appearanceDesc}`,
       `standing upright in a confident natural pose, feet flat on ground, both feet and shoes fully visible`,
       `MANDATORY OCCASION: ${occasionGuidance.label}; dress code must be ${occasionGuidance.specificity}`,
       `wearing this exact elaborative outfit: ${outfitRecommendation.outfitDescription}`,
       `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch, scarf, dupatta, tie, pocket square, headwear or hair accessory when present`,
       `image detail prompt: ${outfitRecommendation.imagePrompt}`,
+      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly — preserve identity, facial proportions, hairline, skin tone and eyes. Full body must be visible from head to toes; do NOT crop the head, torso, legs or feet. Reproduce clothing details exactly.`,
       `the outfit must visually communicate ${occasionGuidance.label} immediately; avoid generic casual clothing, plain t-shirts, basic jeans, gymwear, or office wear unless explicitly requested`,
       `complete outfit visible from head to toe including shoes, socks if applicable, belt, watch, jewellery, bag and all accessories`,
       `shoes clearly detailed — leather texture, sole, laces or straps fully visible`,
@@ -297,9 +314,12 @@ Respond in JSON:
     ].join(', ');
 
     let generatedImageUrl = null;
+    let generatedImageSrcSet = null;
     try {
       const seed = Math.floor(Math.random() * 999999);
-      generatedImageUrl = await generateImageWithPollinations(fullImagePrompt, seed);
+      const imageResult = await generateImageWithPollinations(fullImagePrompt, seed);
+      generatedImageUrl = imageResult.url;
+      generatedImageSrcSet = imageResult.srcset;
     } catch (imageError) {
       console.error('Image generation error:', imageError.message);
     }
@@ -309,7 +329,9 @@ Respond in JSON:
       photoAnalysis,
       outfitRecommendation,
       generatedImageUrl,
+      generatedImageSrcSet,
       photoPath: req.file.filename,
+      referenceImageUrl: uploadedUrl,
     });
   } catch (error) {
     console.error('Analysis error:', error);
