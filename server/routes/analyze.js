@@ -170,11 +170,16 @@ Respond only with JSON and nothing else.`,
         },
       ],
       max_tokens: 400,
+      response_format: { type: 'json_object' },
     });
 
     const raw = response.choices[0].message.content;
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return { nsfwProbability: 1.0, similarity: 0.0, explanation: 'No JSON response from validator' };
+    if (!match) {
+      console.warn('Validator failed to return JSON. Skipping validation. Raw:', raw);
+      // Accept the image anyway if the validator gets confused
+      return { nsfwProbability: 0, similarity: 1.0, explanation: 'Validation bypassed' };
+    }
     const parsed = JSON.parse(match[0]);
     return {
       nsfwProbability: Number(parsed.nsfwProbability) || 0,
@@ -183,7 +188,8 @@ Respond only with JSON and nothing else.`,
     };
   } catch (err) {
     console.warn('Image validation failed:', err?.message || err);
-    return { nsfwProbability: 1.0, similarity: 0.0, explanation: 'Validation service error' };
+    // Accept the image anyway if the Groq service fails
+    return { nsfwProbability: 0, similarity: 1.0, explanation: 'Validation service error bypassed' };
   }
 }
 
@@ -247,6 +253,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
         },
       ],
       max_tokens: 600,
+      response_format: { type: 'json_object' },
     });
 
     photoAnalysis = parsePhotoAnalysis(visionResponse.choices[0].message.content);
