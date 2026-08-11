@@ -201,12 +201,12 @@ async function generateImageWithPollinations(prompt, seed) {
   // Request multiple sizes and return a srcset so the browser can pick the right density
   const widths = [768, 1536, 2048, 3072]; // include larger widths for high-DPI
   const srcParts = widths.map((w) => {
-    const h = Math.round((w * 4) / 3); // keep 3:4 aspect ratio (width:height)
+    const h = Math.round((w * 16) / 9); // keep 3:4 aspect ratio (width:height)
     return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=true${seedParam} ${w}w`;
   });
 
   const defaultWidth = 1536;
-  const defaultHeight = Math.round((defaultWidth * 4) / 3);
+  const defaultHeight = Math.round((defaultWidth * 16) / 9);
   const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=true${seedParam}`;
 
   return {
@@ -295,23 +295,15 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
 
   // Prepend the reference image line and add strict instructions to preserve face identity
   const baseImagePromptParts = [
-    `REFERENCE_IMAGE: ${uploadedUrl}`, // explicit reference image
-    `A full-length photorealistic fashion photograph of ${appearanceDesc}`,
-    `standing upright in a confident natural pose, feet flat on ground, both feet and shoes fully visible`,
-    `MANDATORY OCCASION: ${occasionGuidance.label}; dress code must be ${occasionGuidance.specificity}`,
-    `wearing this exact elaborative outfit: ${outfitRecommendation.outfitDescription}`,
-    `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch, scarf, dupatta, tie, pocket square, headwear or hair accessory when presen[...]`,
-    `image detail prompt: ${outfitRecommendation.imagePrompt}`,
-    `STRICT INSTRUCTIONS: Use the face from the provided user photo in REFERENCE_IMAGE exactly — absolutely preserve identity, facial proportions, hairline, skin tone, and eye color. The entire person must be distinct and recognizable`,
-    `A absolute requirement is a full body shot, ensuring nothing is cropped from the head down to the toes. Do not crop the person.`,
-    `the outfit must visually communicate ${occasionGuidance.label} immediately; avoid generic casual clothing, basic everyday wear, or anything plain unless explicitly requested for a very casual occasion. It must be a specific, dressy, detailed look as described.`,
-    `complete outfit visible from head to toe including shoes, socks if applicable, belt, watch, jewellery, bag and all accessories`,
-    `shoes clearly detailed — leather texture, sole, laces or straps fully visible`,
-    `entire body must be perfectly centered and clearly visible from head to feet - nothing can be cropped out, no close-ups`,
-    `clean white seamless studio background, professional fashion editorial lighting, sharp crisp details throughout`,
-    `ultra high resolution 4K, magazine cover quality, photorealistic skin and fabric textures`,
-    `the model looks like a real ${photoAnalysis.ethnicAppearance} person`,
-    `camera angle: straight on, full-length shot, neutral expression`,
+    `Extreme wide shot, full body portrait from head to toe, both feet and shoes fully visible on the floor`,
+    `A photorealistic fashion photograph of ${appearanceDesc}`,
+    `STRICT INSTRUCTIONS: Use the face from the provided user photo in ${uploadedUrl} exactly — preserve identity, skin tone, and facial proportions`,
+    `wearing exactly this outfit: ${outfitRecommendation.imagePrompt}`,
+    `occasion: ${occasionGuidance.label}; dress code: ${occasionGuidance.specificity}`,
+    `The person is standing far back from the camera so the entire body is perfectly centered. Do not crop the head. Do not crop the feet. No close-ups.`,
+    `shoes clearly detailed, all accessories clearly visible`,
+    `clean white seamless studio background, sharp crisp details, 4K`,
+    `camera angle: wide straight on, full-length shot, neutral expression`
   ];
 
   // Append strong negative instructions so the generator avoids underwear/nudity
