@@ -202,10 +202,10 @@ async function generateImageWithPollinations(prompt, seed) {
   const widths = [768, 1536, 2048, 3072]; // include larger widths for high-DPI
   const srcParts = widths.map((w) => {
     const h = Math.round((w * 16) / 9); // keep 3:4 aspect ratio (width:height)
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false${seedParam} ${w}w`;
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
   });
 
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false${seedParam}`;
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
 
   return {
     url: defaultUrl,
