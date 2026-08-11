@@ -273,7 +273,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
       },
       {
         role: 'user',
-        content: `Create a detailed outfit recommendation for a person with the following profile:\n\nPhoto Analysis:\n- Skin Tone: ${photoAnalysis.skinTone}\n- Gender: ${photoAnalysis.gender}\n- Ethnic Appearance: ${photoAnalysis.ethnicAppearance}\n- Hair: ${photoAnalysis.hairDescription}\n- Face: ${photoAnalysis.faceDescription}\n- Appearance: ${photoAnalysis.appearanceDescription}\n\nPreferences:\n- Occasion: ${occasionGuidance.label}\n- Mandatory Occasion Dress Code: ${occasionGuidance.specificity}\n- Budget: ${budget}\n- Height: ${height}\n- Age Group: ${age}\n- Body Type: ${bodyType}\n\nProvide:\n1. A complete, elaborative outfit breakdown that is specific to the occasion and budget.\n2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpa[...]\n3. For each item, include color, fabric/material, texture/finish, fit/silhouette, and small design details.\n4. Why this outfit suits their appearance, body type, skin tone, ethnic appearance, and the exact occasion dress code.\n5. Styling tips personalized to their look.\n\nRespond in JSON:\n{\n  "outfitName": "Short catchy name",\n  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/material[...]\n  "colorPalette": "Detailed 3-5 sentence explanation of the colors and why they suit this person's specific skin tone and the occasion",\n  "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",\n  "stylingTips": "3-5 personalized styling tips, including how to place or pair accessories",\n  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe and explicitly naming the occasion as ${occasionGuidance.label}. Include every visible attire item an[...]\n}`,
+        content: `Create a detailed outfit recommendation for a person with the following profile:\n\nPhoto Analysis:\n- Skin Tone: ${photoAnalysis.skinTone}\n- Gender: ${photoAnalysis.gender}\n- Ethnic Appearance: ${photoAnalysis.ethnicAppearance}\n- Hair: ${photoAnalysis.hairDescription}\n- Face: ${photoAnalysis.faceDescription}\n- Appearance: ${photoAnalysis.appearanceDescription}\n\nPreferences:\n- Occasion: ${occasionGuidance.label}\n- Mandatory Occasion Dress Code: ${occasionGuidance.specificity}\n- Budget: ${budget}\n- Height: ${height}\n- Age Group: ${age}\n- Body Type: ${bodyType}\n\nProvide:\n1. A complete, elaborative outfit breakdown that is specific to the occasion and budget.\n2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpa[...]\n3. For each item, include color, fabric/material, texture/finish, fit/silhouette, and small design details.\n4. Why this outfit suits their appearance, body type, skin tone, ethnic appearance, and the exact occasion dress code.\n5. Styling tips personalized to their look.\n\nRespond in JSON:\n{\n  "outfitName": "Short catchy name",\n  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/material[...]\n  "colorPalette": "Detailed 3-5 sentence explanation of the colors and why they suit this person's specific skin tone and the occasion",\n  "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",\n  "stylingTips": "3-5 personalized styling tips, including how to place or pair accessories",\n  "imagePrompt": "Concise 30-word max full-body outfit prompt describing top clothes, lower clothes, and shoes from head to toe."\n}`,
       },
     ],
     max_tokens: 1800,
@@ -294,25 +294,17 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   if (!outfitRecommendation) {
     throw new Error('Failed to generate outfit recommendation');
 }
-  const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
+ // --- PASTE THIS EXACT CODE IN ITS PLACE ---
+// 1. Keep appearance brief so it doesn't waste prompt length or force a face close-up
+const simpleAppearance = `a real-looking ${photoAnalysis.ethnicAppearance || ''} ${photoAnalysis.gender || 'person'} with ${photoAnalysis.skinTone || 'medium'} skin tone, ${bodyType || 'average'} build`;
 
-  // --- PASTE THIS EXACT CODE IN ITS PLACE ---
+// 2. Put FULL-BODY framing at the VERY FRONT so Flux reads it first before any truncation
 const baseImagePromptParts = [
-    // 1. Put the outfit front and center
-    `A photorealistic fashion photograph of ${appearanceDesc} wearing exactly this outfit: ${outfitRecommendation.imagePrompt}`,
-    
-    // 2. Context
-    `occasion: ${occasionGuidance.label}; dress code: ${occasionGuidance.specificity}`,
-    
-    // 3. Camera and positioning instructions
-    `Extreme wide shot, full body portrait from head to toe, both feet and shoes fully visible on the floor`,
-    `The person is standing far back from the camera so the entire body is perfectly centered. Do not crop the head. Do not crop the feet. No close-ups.`,
-    
-    // 4. Quality and styling details
-    `shoes clearly detailed, all accessories clearly visible`,
-    `clean white seamless studio background, sharp crisp details, 4K`,
-    `camera angle: wide straight on, full-length shot, neutral expression`
-];
+    `Full-length wide shot fashion photograph, full body standing portrait from head to toe, showing complete outfit and footwear on floor`,
+    `${simpleAppearance} wearing: ${outfitRecommendation.imagePrompt}`,
+    `occasion: ${occasionGuidance.label}`,
+    `clean white studio backdrop, 4K, sharp focus`
+]; 
 
   // Append strong negative instructions so the generator avoids underwear/nudity
   baseImagePromptParts.push(NEGATIVE_INSTRUCTIONS);
