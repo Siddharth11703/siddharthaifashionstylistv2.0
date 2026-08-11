@@ -164,7 +164,7 @@ Instructions:
 2) Return similarity = how well the image matches the outfit description (0.0 = unrelated, 1.0 = exact match). Use a CLIP-like comparison.
 3) Provide a short explanation field describing major mismatches (e.g., "image shows underwear and exposed torso", or "image shows casual T-shirt and jeans instead of sherwani").
 
-Respond only with JSON and nothing else.",
+Respond only with JSON and nothing else.`,
             },
           ],
         },
