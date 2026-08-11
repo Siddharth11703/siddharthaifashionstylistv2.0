@@ -205,6 +205,8 @@ async function generateImageWithPollinations(prompt, seed) {
     return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
   });
 
+  const defaultWidth = 1024;
+  const defaultHeight = 1820;
   const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
 
   return {
@@ -233,6 +235,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   try {
     const visionResponse = await groq.chat.completions.create({
       model: GROQ_VISION_MODEL,
+      response_format: { type: "json_object" },
       messages: [
         {
           role: 'user',
@@ -243,10 +246,11 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
                 url: `data:${mimeType};base64,${base64Photo}`,
               },
             },
-            {
-              type: 'text',
-              text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS\n\n1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige")\n2. gender: male/female/neutral\n3. hairDescription: hair color, length, texture (e.g., "short black curly hair", "long straight brown hair")\n4. faceDescription: key facial features (e.g., "round face with brown eyes", "sharp jawline with dark eyes", "high cheekbones")\n5. ethnicAppearance: apparent ethnic appearance for realistic generation (e.g., "South Asian", "East Asian", "Black", "Hispanic", "Middle Eastern", "White/Caucasian", "Mixed")\n6. appearanceDescription: 1-sentence holistic description\n7. styleFeatures: any current style elements visible\n\nRespond ONLY in valid JSON:\n{\n  "skinTone": "",\n  "gender": "",\n  "hairDescription": "",\n  "faceDescription": "",\n  "ethnicAppearance": "",\n  "appearanceDescription": "",\n  "styleFeatures": ""\n}`,
-            },
+            // --- PASTE THIS EXACT CODE IN ITS PLACE ---
+          {
+            type: 'text',
+            text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS \n\n 1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige") \n 2. gender: male/female/neutral \n 3. hairDescription: hair color, length, texture (e.g., "short black curly hair", "long straight brown hair") \n 4. faceDescription: key facial features (e.g., "round face with brown eyes", "sharp jawline with dark eyes", "high cheekbones") \n 5. ethnicAppearance: apparent ethnic appearance for realistic generation (e.g., "South Asian", "East Asian", "Black", "Hispanic", "Middle Eastern", "White/Caucasian", "Mixed") \n 6. appearanceDescription: 1-sentence holistic description \n 7. styleFeatures: any current style elements visible \n\n Respond ONLY in valid JSON: \n {\n "skinTone": "", \n "gender": "", \n "hairDescription": "", \n "faceDescription": "", \n "ethnicAppearance": "", \n "appearanceDescription": "", \n "styleFeatures": "" \n }\n\n IMPORTANT: You must return ONLY a raw, valid JSON object. Do not include markdown blocks (like \`\`\`json). Do not include any conversational text.`,
+          },
           ],
         },
       ],
