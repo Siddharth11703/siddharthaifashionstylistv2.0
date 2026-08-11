@@ -287,6 +287,10 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   if (!outfitRecommendation) {
     throw new Error('Failed to generate outfit recommendation');
   }
+  if (!outfitRecommendation) {
+    throw new Error('Failed to generate outfit recommendation');
+}
+  const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
 
   // --- PASTE THIS EXACT CODE IN ITS PLACE ---
 const baseImagePromptParts = [
