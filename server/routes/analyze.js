@@ -202,12 +202,10 @@ async function generateImageWithPollinations(prompt, seed) {
   const widths = [768, 1536, 2048, 3072]; // include larger widths for high-DPI
   const srcParts = widths.map((w) => {
     const h = Math.round((w * 16) / 9); // keep 3:4 aspect ratio (width:height)
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=true${seedParam} ${w}w`;
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false${seedParam} ${w}w`;
   });
 
-  const defaultWidth = 1536;
-  const defaultHeight = Math.round((defaultWidth * 16) / 9);
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=true${seedParam}`;
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false${seedParam}`;
 
   return {
     url: defaultUrl,
@@ -290,21 +288,23 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
     throw new Error('Failed to generate outfit recommendation');
   }
 
-  // Step 3: Build a person-matching image prompt for Pollinations AI
-  const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
-
-  // Prepend the reference image line and add strict instructions to preserve face identity
-  const baseImagePromptParts = [
-    `Extreme wide shot, full body portrait from head to toe, both feet and shoes fully visible on the floor`,
-    `A photorealistic fashion photograph of ${appearanceDesc}`,
-    `STRICT INSTRUCTIONS: Use the face from the provided user photo in ${uploadedUrl} exactly — preserve identity, skin tone, and facial proportions`,
-    `wearing exactly this outfit: ${outfitRecommendation.imagePrompt}`,
+  // --- PASTE THIS EXACT CODE IN ITS PLACE ---
+const baseImagePromptParts = [
+    // 1. Put the outfit front and center
+    `A photorealistic fashion photograph of ${appearanceDesc} wearing exactly this outfit: ${outfitRecommendation.imagePrompt}`,
+    
+    // 2. Context
     `occasion: ${occasionGuidance.label}; dress code: ${occasionGuidance.specificity}`,
+    
+    // 3. Camera and positioning instructions
+    `Extreme wide shot, full body portrait from head to toe, both feet and shoes fully visible on the floor`,
     `The person is standing far back from the camera so the entire body is perfectly centered. Do not crop the head. Do not crop the feet. No close-ups.`,
+    
+    // 4. Quality and styling details
     `shoes clearly detailed, all accessories clearly visible`,
     `clean white seamless studio background, sharp crisp details, 4K`,
     `camera angle: wide straight on, full-length shot, neutral expression`
-  ];
+];
 
   // Append strong negative instructions so the generator avoids underwear/nudity
   baseImagePromptParts.push(NEGATIVE_INSTRUCTIONS);
