@@ -99,11 +99,14 @@ export default function OutfitResult({ result, onSave, user }) {
                 )}
               </div>
             ) : (
-              <div className="h-60 flex flex-col items-center justify-center gap-3 text-white/40">
-                <svg className="w-12 h-12 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
+              <div className="flex flex-col items-center justify p-8 bg-gray-800/50 rounded-lg border border-gray-700 text-center min-h-[400px]">
+                <svg className="w-12 h-12 text-pink-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <p className="text-sm">Image could not be loaded</p>
+                <h3 className="text-lg font-semibold text-white mb-2">Image Generation Blocked</h3>
+                <p className="text-gray-400 text-sm max-w-sm">
+                   Your outfit recommendation is ready below, but the visual could not be generated due to automated safety filters falsely flagging the fashion description.
+                </p>
               </div>
             )}
           </div>
