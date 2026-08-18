@@ -276,7 +276,7 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
     // edges more heavily), explicit aspect-ratio-friendly full-body pose,
 
     // Restructured to aggressively force a zoomed-out, full-body view
-    const imagePromptText = `Ultra-wide full-body shot, completely zoomed out, showing entire body from top of head down to shoes with empty space above the head and below the feet. ${basePrompt}, standing straight in center frame, fashion editorial photography, wide angle lens, natural lighting, sharp focus, 8k resolution, photorealistic.`;
+    const imagePromptText = `Far full-body shot, extremely wide angle, entire subject is small in the frame, completely zoomed out. Showing entire body from top of head down to shoes with significant empty space above the head and below the feet. Camera perspective is from the ground looking up. ${basePrompt}, standing straight in center frame, fashion editorial photography, natural lighting, sharp focus, 8k resolution, photorealistic.`;
 
 const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
 console.log('🎨 Image generation initiated'); 
