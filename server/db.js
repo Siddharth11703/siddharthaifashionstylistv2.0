@@ -1,63 +1,88 @@
-import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import 'dotenv/config';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const sourceDbPath = path.join(__dirname, '..', 'styleai.db');
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-const resolveDbPath = () => {
-  if (process.env.DATABASE_PATH) {
-    return process.env.DATABASE_PATH;
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY).');
+}
+
+const normalizeBaseUrl = (url) => url.replace(/\/$/, '');
+
+const request = async (path, options = {}) => {
+  const response = await fetch(`${normalizeBaseUrl(supabaseUrl)}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+      ...options.headers,
+    },
+  });
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    const message = data?.message || data?.error || response.statusText;
+    throw new Error(`Supabase request failed: ${message}`);
   }
 
-  // Vercel/serverless deployments mount the project directory as read-only.
-  // SQLite needs to create journal/WAL files next to the database, so use /tmp there.
-  if (process.env.VERCEL === '1') {
-    const tmpDbDir = path.join(os.tmpdir(), 'siddharth-ai-fashion-stylist');
-    const tmpDbPath = path.join(tmpDbDir, 'styleai.db');
-
-    fs.mkdirSync(tmpDbDir, { recursive: true });
-
-    if (!fs.existsSync(tmpDbPath) && fs.existsSync(sourceDbPath)) {
-      fs.copyFileSync(sourceDbPath, tmpDbPath);
-    }
-
-    return tmpDbPath;
-  }
-
-  return sourceDbPath;
+  return data;
 };
 
-const dbPath = resolveDbPath();
-const db = new Database(dbPath);
+const eq = (value) => `eq.${encodeURIComponent(value)}`;
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    phone TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+const supabaseDb = {
+  async findUserByEmail(email) {
+    const users = await request(`users?email=${eq(email)}&limit=1`);
+    return users[0] || null;
+  },
 
-  CREATE TABLE IF NOT EXISTS saved_outfits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    occasion TEXT,
-    budget TEXT,
-    height TEXT,
-    age TEXT,
-    body_type TEXT,
-    skin_tone TEXT,
-    outfit_description TEXT,
-    outfit_explanation TEXT,
-    outfit_image_url TEXT,
-    user_photo_path TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
-`);
+  async findUserById(id) {
+    const users = await request(`users?id=${eq(id)}&limit=1`);
+    return users[0] || null;
+  },
 
-export default db;
+  async createUser({ name, email, phone }) {
+    const users = await request('users', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, phone }),
+    });
+    return users[0];
+  },
+
+  async updateUserByEmail(email, { name, phone }) {
+    const users = await request(`users?email=${eq(email)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, phone }),
+    });
+    return users[0];
+  },
+
+  async createSavedOutfit(outfit) {
+    const outfits = await request('saved_outfits', {
+      method: 'POST',
+      body: JSON.stringify(outfit),
+    });
+    return outfits[0];
+  },
+
+  async getSavedOutfitsByUser(userId) {
+    return request(`saved_outfits?user_id=${eq(userId)}&order=created_at.desc`);
+  },
+
+  async getAllSavedOutfits() {
+    return request('saved_outfits?order=created_at.desc');
+  },
+
+  async deleteSavedOutfit(outfitId, userId) {
+    const outfits = await request(`saved_outfits?id=${eq(outfitId)}&user_id=${eq(userId)}`, {
+      method: 'DELETE',
+    });
+    return outfits.length;
+  },
+};
+
+export default supabaseDb;

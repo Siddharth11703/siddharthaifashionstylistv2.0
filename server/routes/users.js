@@ -4,7 +4,7 @@ import db from '../db.js';
 const router = express.Router();
 
 // Register or login user (upsert by email)
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { name, email, phone } = req.body;
 
@@ -17,17 +17,15 @@ router.post('/register', (req, res) => {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const existing = await db.findUserByEmail(email);
 
     if (existing) {
       // Update name/phone if they changed
-      db.prepare('UPDATE users SET name = ?, phone = ? WHERE email = ?').run(name, phone, email);
-      const updated = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+      const updated = await db.updateUserByEmail(email, { name, phone });
       return res.json({ success: true, user: updated, isNew: false });
     }
 
-    const result = db.prepare('INSERT INTO users (name, email, phone) VALUES (?, ?, ?)').run(name, email, phone);
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+    const user = await db.createUser({ name, email, phone });
 
     res.json({ success: true, user, isNew: true });
   } catch (error) {
@@ -37,7 +35,7 @@ router.post('/register', (req, res) => {
 });
 
 // Save outfit
-router.post('/save-outfit', (req, res) => {
+router.post('/save-outfit', async (req, res) => {
   try {
     const {
       userId, occasion, budget, height, age, bodyType,
@@ -48,23 +46,26 @@ router.post('/save-outfit', (req, res) => {
       return res.status(400).json({ error: 'User ID required' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    const user = await db.findUserById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const result = db.prepare(`
-      INSERT INTO saved_outfits (
-        user_id, occasion, budget, height, age, body_type,
-        skin_tone, outfit_description, outfit_explanation,
-        outfit_image_url, user_photo_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      userId, occasion, budget, height, age, bodyType,
-      skinTone, outfitDescription, outfitExplanation, outfitImageUrl, userPhotoPath
-    );
+    const outfit = await db.createSavedOutfit({
+      user_id: userId,
+      occasion,
+      budget,
+      height,
+      age,
+      body_type: bodyType,
+      skin_tone: skinTone,
+      outfit_description: outfitDescription,
+      outfit_explanation: outfitExplanation,
+      outfit_image_url: outfitImageUrl,
+      user_photo_path: userPhotoPath,
+    });
 
-    res.json({ success: true, outfitId: result.lastInsertRowid });
+    res.json({ success: true, outfitId: outfit.id });
   } catch (error) {
     console.error('Save outfit error:', error);
     res.status(500).json({ error: error.message });
@@ -72,12 +73,10 @@ router.post('/save-outfit', (req, res) => {
 });
 
 // Get user's saved outfits
-router.get('/outfits/:userId', (req, res) => {
+router.get('/outfits/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const outfits = db.prepare(`
-      SELECT * FROM saved_outfits WHERE user_id = ? ORDER BY created_at DESC
-    `).all(userId);
+    const outfits = await db.getSavedOutfitsByUser(userId);
 
     res.json({ success: true, outfits });
   } catch (error) {
@@ -87,7 +86,7 @@ router.get('/outfits/:userId', (req, res) => {
 });
 
 // Delete saved outfit
-router.delete('/outfits/:outfitId', (req, res) => {
+router.delete('/outfits/:outfitId', async (req, res) => {
   try {
     const { outfitId } = req.params;
     const { userId } = req.body;
@@ -96,9 +95,9 @@ router.delete('/outfits/:outfitId', (req, res) => {
       return res.status(400).json({ error: 'User ID required' });
     }
 
-    const result = db.prepare('DELETE FROM saved_outfits WHERE id = ? AND user_id = ?').run(outfitId, userId);
+    const deletedCount = await db.deleteSavedOutfit(outfitId, userId);
 
-    if (result.changes === 0) {
+    if (deletedCount === 0) {
       return res.status(404).json({ error: 'Saved outfit not found' });
     }
 
