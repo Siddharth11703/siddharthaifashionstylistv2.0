@@ -16,6 +16,22 @@ const parseVisionAnalysis = (rawText) => {
   }
 };
 const router = express.Router();
+// Helper function to safely extract and parse JSON from the LLM output
+const extractJson = (text) => {
+  if (!text) return null;
+  try {
+    // Find the first '{' and the last '}' to strip out any conversational filler
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) return null;
+    
+    const jsonString = text.substring(start, end + 1);
+    return JSON.parse(jsonString);
+  } catch (error) {
+    console.error("Error extracting JSON:", error);
+    return null;
+  }
+};
 
 const upload = multer({ storage: multer.memoryStorage() });
 
