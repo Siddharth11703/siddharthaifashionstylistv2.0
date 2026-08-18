@@ -1,24 +1,46 @@
-import https from 'https';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import { Groq } from 'groq-sdk';
 import db from '../db.js';
 import express from 'express';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
 // Log whether key present (temporary debug)
 console.log('GROQ_API_KEY present:', !!process.env.GROQ_API_KEY);
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || 'missing-groq-api-key',
-});
+async function createGroqChatCompletion(payload) {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY is not configured');
+  }
+
+  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const responseText = await response.text();
+  let responseBody;
+
+  try {
+    responseBody = responseText ? JSON.parse(responseText) : {};
+  } catch (error) {
+    throw new Error(`Groq returned a non-JSON response (${response.status}): ${responseText}`);
+  }
+
+  if (!response.ok) {
+    const message = responseBody.error?.message || responseBody.message || responseText || 'Unknown Groq API error';
+    throw new Error(`Groq API ${response.status}: ${message}`);
+  }
+
+  return responseBody;
+}
 
 // Generate image using Pollinations AI via backend proxy
 async function generateImageWithPollinations(prompt, seed) {
@@ -69,7 +91,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     // Step 1: Analyze photo using Groq with Vision
     let analysisResponse;
     try {
-      analysisResponse = await groq.chat.completions.create({
+      analysisResponse = await createGroqChatCompletion({
         model: 'qwen/qwen3.6-27b',
         max_completion_tokens: 1024,
         messages: [
@@ -107,7 +129,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
 
     let outfitResponse;
     try {
-      outfitResponse = await groq.chat.completions.create({
+      outfitResponse = await createGroqChatCompletion({
         model: 'llama-3.3-70b-versatile',
         max_completion_tokens: 1024,
         messages: [
