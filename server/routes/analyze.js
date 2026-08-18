@@ -55,7 +55,7 @@ async function generateImageWithPollinations(prompt, seed) {
   const seedParam = seed ? `&seed=${seed}` : '';
   
   // CHANGED enhance=true to enhance=false so Pollinations doesn't override our strict framing
-  const imageUrl = `/api/proxy-image?prompt=${encodeURIComponent(simplifiedPrompt)}&width=768&height=1024&model=flux&nologo=true&enhance=false${seedParam}`;
+  const imageUrl = `/api/proxy-image?prompt=${encodeURIComponent(simplifiedPrompt)}&width=832&height=1216&model=flux&nologo=true&enhance=false${seedParam}`;
   return imageUrl;
 }
 
@@ -109,14 +109,17 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
               },
               {
                   type: 'text',
-                  text: `Analyze this photo for fashion styling. Provide concise factual details:
-                  1. Estimated Gender (Male / Female / Other)
-                  2. Skin tone (e.g., fair, medium, dark, olive)
-                  3. Hair type and color
-                  4. Body/build from clothing fit (e.g., petite, average, athletic, plus-size)
-                  5. Face shape (e.g., round, oval, square, oblong)
-                  6. Notable visible style features (e.g., glasses, beard, long hair, accessories)
-                  Keep it concise and factual.`,
+                  text: `Analyze this photo for fashion styling. Return ONLY valid JSON (no markdown fences, no commentary) with exactly these keys:
+{
+  "gender": "Male | Female | Other",
+  "skinTone": "e.g. fair, medium, dark, olive",
+  "hairType": "e.g. straight, wavy, curly, short, bald",
+  "hairColor": "e.g. black, brown, blonde, gray",
+  "bodyType": "from clothing fit, e.g. petite, average, athletic, plus-size",
+  "faceShape": "e.g. round, oval, square, oblong",
+  "styleFeatures": "notable visible details e.g. glasses, beard, tattoos, accessories, or empty string if none"
+}
+Be concise and factual. Estimate gender only from visual presentation for styling purposes.`,
                 },
             ],
           },
@@ -128,6 +131,9 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     }
 
     const photoAnalysis = stripAIThinking(analysisResponse.choices?.[0]?.message?.content || '');
+    // Structured, trustworthy facts used internally for prompt-building —
+    // keeps `photoAnalysis` itself unchanged (raw string) for API compatibility.
+    const visionFacts = parseVisionAnalysis(photoAnalysis);
     console.log('✅ Photo analysis complete');
 
    // Step 2: Generate outfit recommendation based on analysis and preferences
@@ -135,33 +141,40 @@ const preferencesText = Object.entries(preferences)
   .map(([key, value]) => `${key}: ${value}`)
   .join(', ');
 
-const outfitPrompt = `Based on this person's appearance: ${photoAnalysis}
-And their style preferences: ${preferencesText}
-Create a modern, trending, realistic outfit recommendation that strictly adheres to their specified budget level. Do not suggest overly extravagant luxury pieces if they asked for a tight budget. Focus on current fashion trends (e.g., streetwear, smart casual, quiet luxury) suitable for their occasion.
-
-Important constraints for the "imagePrompt":
-1. FACE MATCHING: You MUST start the imagePrompt with a highly detailed physical description of the person using EXACT details from the appearance analysis (skin tone, exact hair color and style, face shape, facial hair, glasses, etc.).
-2. BODY: Explicitly include the user's Body Type and Age.
-3. TREND & BUDGET: Describe the outfit in rich detail, specifying modern, realistic fabrics, tailoring, and colors that fit the budget.
-4. Do not use generic terms like "model" or "person." Use specific terms like "a 25-year-old fair-skinned man with short curly black hair and a styled beard..."
-
-Return ONLY valid JSON with these keys:
+const outfitPrompt = `Person profile (for tailoring the outfit only — do NOT restate or re-describe the person in your output):
+- Gender: ${visionFacts.gender}
+- Skin tone: ${visionFacts.skinTone}
+- Hair: ${visionFacts.hairColor} ${visionFacts.hairType}
+- Body type: ${visionFacts.bodyType}
+- Face shape: ${visionFacts.faceShape}
+- Notable features: ${visionFacts.styleFeatures || 'none'}
+ 
+Style preferences: ${preferencesText}
+ 
+Create ONE modern, currently-trending, realistic outfit recommendation for this person's occasion and budget. Requirements:
+1. TREND-DRIVEN: Reference real current fashion movements relevant to the occasion (e.g., quiet luxury, elevated streetwear, smart casual, old money aesthetic, minimalist tailoring) — not generic or dated combinations.
+2. CLASSY, NEVER VULGAR: The outfit must be tasteful, well-covered, and appropriate for the stated occasion. No overly revealing, suggestive, or provocative pieces under any circumstances, regardless of body type or gender.
+3. BUDGET-ACCURATE: Strictly match the stated budget level — no extravagant/luxury pieces for a tight budget, no cheap-looking pieces for a luxury budget.
+4. FLATTERING: Choose silhouettes, fabrics, and colors that suit the stated body type, skin tone, and face shape.
+5. Do NOT include any physical description of the person (no skin tone, hair, face, gender wording) anywhere in your output — only describe the clothing, fabrics, colors, fit, and accessories.
+ 
+Return ONLY valid JSON, no markdown fences, no commentary, with exactly these keys:
 {
   "outfitName": "catchy professional title",
   "outfitDescription": "2-3 concise sentences describing the complete outfit from top to shoes/accessories",
-  "explanation": "2-3 concise sentences explaining why it fits the user's appearance, occasion, budget, height, age, and body type",
+  "explanation": "2-3 concise sentences explaining why it fits the occasion, budget, height, age, and body type",
   "colorPalette": ["3-4 color names"],
   "keyPieces": ["5-7 specific garments/accessories"],
   "stylingTips": ["3-5 concise styling tips"],
   "occasions": ["2-4 suitable occasions"],
-  "imagePrompt": "[Insert exact facial/physical description from analysis], wearing [Insert highly detailed trending outfit with realistic fabrics]. Full-length shot, head to shoes fully visible."
+  "outfitVisualDescription": "one dense sentence describing ONLY the garments/fabrics/colors/fit/accessories in rich visual detail, suitable for an image generator — no mention of the person wearing them"
 }`;
 
     let outfitResponse;
     try {
       outfitResponse = await createGroqChatCompletion({
         model: 'openai/gpt-oss-120b',
-        max_completion_tokens: 1024,
+        max_completion_tokens: 1536,
         messages: [
           {
             role: 'user',
@@ -178,42 +191,47 @@ Return ONLY valid JSON with these keys:
 
     // Parse outfit recommendation
     let outfitRecommendation = {};
-    try {
-      const jsonMatch = outfitText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        outfitRecommendation = JSON.parse(jsonMatch[0]);
-      } else {
-        outfitRecommendation = {
-          outfitName: 'Personalized Outfit',
-          outfitDescription: outfitText,
-          explanation: 'This recommendation is based on your uploaded photo and selected preferences.',
-          colorPalette: ['Navy', 'White', 'Gold'],
-          keyPieces: outfitText.split('\n').slice(0, 7),
-          stylingTips: ['Keep the fit balanced and comfortable.', 'Match accessories to the main color palette.'],
-          occasions: ['Selected occasion', 'Smart casual settings'],
-          imagePrompt: outfitText,
-        };
-      }
-    } catch {
+    const parsedOutfit = extractJson(outfitText);
+    if (parsedOutfit) {
+      outfitRecommendation = parsedOutfit;
+    } else {
+      // Fallback still gets a usable, occasion-appropriate description
+      // instead of a raw truncated dump — quality degrades gracefully.
+      console.warn('⚠️ Could not parse outfit JSON, using fallback. Raw text:', outfitText.slice(0, 300));
       outfitRecommendation = {
         outfitName: 'Personalized Outfit',
         outfitDescription: outfitText,
         explanation: 'This recommendation is based on your uploaded photo and selected preferences.',
         colorPalette: ['Navy', 'White', 'Gold'],
-        keyPieces: outfitText.split('\n').slice(0, 7),
+        keyPieces: outfitText.split('\n').filter(Boolean).slice(0, 7),
         stylingTips: ['Keep the fit balanced and comfortable.', 'Match accessories to the main color palette.'],
-        occasions: ['Selected occasion', 'Smart casual settings'],
-        imagePrompt: outfitText,
+        occasions: [preferences.occasion || 'Selected occasion', 'Smart casual settings'],
+        outfitVisualDescription: outfitText.replace(/\{|\}/g, '').slice(0, 400),
       };
     }
 
     console.log('✅ Outfit recommendation generated');
 
-   // Step 3: Generate image prompt for outfit visualization
-const basePrompt = outfitRecommendation.imagePrompt || `A person wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'}.`;
+   // Step 3: Build the image prompt ourselves from VERIFIED facts rather
+    // than trusting an LLM to faithfully repeat gender/body/face details —
+    // this is what guarantees the generated image matches the person and
+    // is a genuine full-body shot.
+    const age = preferences.age ? `${preferences.age}-year-old` : '';
+    const genderNoun = { Male: 'man', Female: 'woman', Other: 'person' }[visionFacts.gender] || 'person';
+    const featuresClause = visionFacts.styleFeatures ? `, ${visionFacts.styleFeatures}` : '';
+ 
+    const physicalDescription = `A ${age} ${visionFacts.gender.toLowerCase()}, a ${genderNoun} with ${visionFacts.skinTone} skin, ${visionFacts.hairColor} ${visionFacts.hairType} hair, and a ${visionFacts.faceShape} face shape${featuresClause}, with a ${visionFacts.bodyType} build`.replace(/\s+/g, ' ').trim();
+ 
+    const outfitVisual = outfitRecommendation.outfitVisualDescription
+      || outfitRecommendation.outfitDescription
+      || outfitRecommendation.outfitName
+      || 'a stylish, on-trend outfit';
+ 
+    // Framing cues repeated at both start and end (models weight prompt
+    // edges more heavily), explicit aspect-ratio-friendly full-body pose,
 
-// Restructured to use specific photography lenses and framing keywords that Flux respects for full-body shots
-const imagePromptText = `Full-length portrait from head to feet, wide shot, subject standing in center frame with clear space above head and below shoes, shot with 35mm lens. ${basePrompt}, fashion editorial photography, natural lighting, sharp focus, 8k resolution, photorealistic.`;
+    // Restructured to aggressively force a zoomed-out, full-body view
+    const imagePromptText = `Ultra-wide full-body shot, completely zoomed out, showing entire body from top of head down to shoes with empty space above the head and below the feet. ${basePrompt}, standing straight in center frame, fashion editorial photography, wide angle lens, natural lighting, sharp focus, 8k resolution, photorealistic.`;
 
 const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
 console.log('🎨 Image generation initiated'); 
