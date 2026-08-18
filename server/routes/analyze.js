@@ -69,19 +69,17 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     // Step 1: Analyze photo using Groq with Vision
     let analysisResponse;
     try {
-      analysisResponse = await groq.messages.create({
+      analysisResponse = await groq.chat.completions.create({
         model: 'qwen/qwen3.6-27b',
-        max_tokens: 1024,
+        max_completion_tokens: 1024,
         messages: [
           {
             role: 'user',
             content: [
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: imageMediaType,
-                  data: base64Image,
+                type: 'image_url',
+                image_url: {
+                  url: `data:${imageMediaType};base64,${base64Image}`,
                 },
               },
               {
@@ -97,9 +95,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       return res.status(502).json({ error: 'Vision provider error', details: err.message || String(err) });
     }
 
-    const photoAnalysis = analysisResponse.content && analysisResponse.content[0] && analysisResponse.content[0].type === 'text'
-      ? analysisResponse.content[0].text
-      : '';
+    const photoAnalysis = analysisResponse.choices?.[0]?.message?.content || '';
     console.log('✅ Photo analysis complete');
 
     // Step 2: Generate outfit recommendation based on analysis and preferences
@@ -111,9 +107,9 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
 
     let outfitResponse;
     try {
-      outfitResponse = await groq.messages.create({
+      outfitResponse = await groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
-        max_tokens: 1024,
+        max_completion_tokens: 1024,
         messages: [
           {
             role: 'user',
@@ -126,9 +122,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       return res.status(502).json({ error: 'Outfit provider error', details: err.message || String(err) });
     }
 
-    const outfitText = outfitResponse.content && outfitResponse.content[0] && outfitResponse.content[0].type === 'text'
-      ? outfitResponse.content[0].text
-      : '';
+    const outfitText = outfitResponse.choices?.[0]?.message?.content || '';
 
     // Parse outfit recommendation
     let outfitRecommendation = {};
