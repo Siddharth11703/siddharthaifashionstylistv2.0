@@ -62,7 +62,7 @@ export default function OutfitResult({ result, onSave, user }) {
             ))}
           </div>
 
-          // ... other code above
+          
       <div className="space-y-4">
         {/* 'Outfit Look' Tab Content (No Explanation) */}
         {activeTab === 'outfit' && (
@@ -158,7 +158,7 @@ export default function OutfitResult({ result, onSave, user }) {
           </div>
         )}
 
-      // ... other code above line 161
+    
         {activeTab === 'analysis' && (
           <div className="profile-analysis-card p-5 rounded-2xl glass border border-white/10">
             <h3 className="text-white font-semibold mb-2">Your Profile</h3>
