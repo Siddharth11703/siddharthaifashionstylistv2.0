@@ -170,9 +170,9 @@ export default function OutfitResult({ result, onSave, user }) {
             </div>
           </div>
         )}
-      </div> {/* Closes space-y-4 div */}
-    </> {/* Closes React Fragment */}
-  </div> {/* Closes main wrapper div */}
+      </div>
+    </>
+  </div>
   );
 }
 
