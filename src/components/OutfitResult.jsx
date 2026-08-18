@@ -1,18 +1,33 @@
 import { useState } from 'react';
 
+const asList = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    return value
+      .split(/\n|,|;/)
+      .map((item) => item.replace(/^[-*\d.)\s]+/, '').trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
 export default function OutfitResult({ result, onSave, user }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeTab, setActiveTab] = useState('outfit');
 
-  const { photoAnalysis, outfitRecommendation, generatedImageUrl } = result;
+  const { photoAnalysis, outfitRecommendation = {}, generatedImageUrl } = result;
+  const colorPalette = asList(outfitRecommendation.colorPalette);
+  const keyPieces = asList(outfitRecommendation.keyPieces);
+  const stylingTips = asList(outfitRecommendation.stylingTips);
+  const occasions = asList(outfitRecommendation.occasions);
 
   const handleImageError = (e) => {
     // Clear further error handling to avoid infinite loop
     if (e?.target) e.target.onerror = null;
     // Use the backend proxy for the fallback so the browser does not request Pollinations directly
-    const fallbackPrompt = 'professional business outfit portrait';
-    const fallbackUrl = `/api/proxy-image?prompt=${encodeURIComponent(fallbackPrompt)}&width=768&height=1024`;
+    const fallbackPrompt = encodeURIComponent(outfitRecommendation.imagePrompt || outfitRecommendation.outfitDescription || 'professional fashion outfit portrait');
+    const fallbackUrl = `/api/proxy-image?prompt=${fallbackPrompt}&width=768&height=1024`;
     e.target.src = fallbackUrl;
     setImageError(true);
   };
@@ -27,16 +42,16 @@ export default function OutfitResult({ result, onSave, user }) {
           </svg>
           Outfit Generated
         </div>
-        <h2 className="text-2xl font-bold text-white">{outfitRecommendation.outfitName}</h2>
-        <p className="text-white/40 text-sm mt-1">Personalized for your appearance</p>
+        <h2 className="text-2xl font-bold text-white">{outfitRecommendation.outfitName || 'Personalized Outfit'}</h2>
+        <p className="text-white/40 text-sm mt-1">Personalized for your appearance and preferences</p>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 glass rounded-xl p-1">
         {[
           { id: 'outfit', label: 'Outfit Look' },
+          { id: 'details', label: 'Outfit Details' },
           { id: 'analysis', label: 'Your Profile' },
-          
         ].map(tab => (
           <button
             key={tab.id}
@@ -55,7 +70,6 @@ export default function OutfitResult({ result, onSave, user }) {
       {/* Outfit Tab */}
       {activeTab === 'outfit' && (
         <div className="space-y-4">
-          {/* Generated Image */}
           <div className="rounded-2xl overflow-hidden glass border border-white/10">
             {generatedImageUrl && !imageError ? (
               <div className="relative">
@@ -68,7 +82,7 @@ export default function OutfitResult({ result, onSave, user }) {
                 )}
                 <img
                   src={generatedImageUrl}
-                  alt="AI generated outfit"
+                  alt={outfitRecommendation.outfitName || 'AI generated outfit'}
                   onLoad={() => setImageLoaded(true)}
                   onError={handleImageError}
                   className={`w-full h-96 object-cover transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
@@ -81,9 +95,79 @@ export default function OutfitResult({ result, onSave, user }) {
             )}
           </div>
 
-          {/* ... rest of component (analysis tab, buttons) unchanged ... */}
+          {outfitRecommendation.outfitDescription && (
+            <div className="glass rounded-2xl p-5 border border-white/10">
+              <h3 className="text-white font-semibold mb-2">Look Summary</h3>
+              <p className="text-white/70 leading-relaxed text-sm">{outfitRecommendation.outfitDescription}</p>
+            </div>
+          )}
         </div>
       )}
+
+      {activeTab === 'details' && (
+        <div className="space-y-4">
+          {outfitRecommendation.explanation && (
+            <div className="glass rounded-2xl p-5 border border-white/10">
+              <h3 className="text-white font-semibold mb-2">Why This Works</h3>
+              <p className="text-white/70 leading-relaxed text-sm">{outfitRecommendation.explanation}</p>
+            </div>
+          )}
+
+          {colorPalette.length > 0 && (
+            <div className="glass rounded-2xl p-5 border border-white/10">
+              <h3 className="text-white font-semibold mb-3">Color Palette</h3>
+              <div className="flex flex-wrap gap-2">
+                {colorPalette.map((color) => (
+                  <span key={color} className="px-3 py-1 rounded-full bg-purple-500/15 border border-purple-500/25 text-purple-200 text-sm">
+                    {color}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {keyPieces.length > 0 && (
+            <div className="glass rounded-2xl p-5 border border-white/10">
+              <h3 className="text-white font-semibold mb-3">Key Pieces</h3>
+              <ul className="space-y-2 text-white/70 text-sm">
+                {keyPieces.map((piece, index) => <li key={`${piece}-${index}`}>• {piece}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {stylingTips.length > 0 && (
+            <div className="glass rounded-2xl p-5 border border-white/10">
+              <h3 className="text-white font-semibold mb-3">Styling Tips</h3>
+              <ul className="space-y-2 text-white/70 text-sm">
+                {stylingTips.map((tip, index) => <li key={`${tip}-${index}`}>• {tip}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {occasions.length > 0 && (
+            <div className="glass rounded-2xl p-5 border border-white/10">
+              <h3 className="text-white font-semibold mb-3">Best For</h3>
+              <p className="text-white/70 text-sm">{occasions.join(', ')}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'analysis' && (
+        <div className="glass rounded-2xl p-5 border border-white/10">
+          <h3 className="text-white font-semibold mb-2">Photo Analysis</h3>
+          <p className="text-white/70 leading-relaxed text-sm whitespace-pre-line">
+            {typeof photoAnalysis === 'string' ? photoAnalysis : JSON.stringify(photoAnalysis, null, 2)}
+          </p>
+        </div>
+      )}
+
+      <button
+        onClick={onSave}
+        className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
+      >
+        {user ? 'Save Outfit' : 'Sign in to Save Outfit'}
+      </button>
     </div>
   );
 }

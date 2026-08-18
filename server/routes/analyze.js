@@ -30,7 +30,7 @@ async function createGroqChatCompletion(payload) {
 
   try {
     responseBody = responseText ? JSON.parse(responseText) : {};
-  } catch (error) {
+  } catch {
     throw new Error(`Groq returned a non-JSON response (${response.status}): ${responseText}`);
   }
 
@@ -110,7 +110,15 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
               },
               {
                 type: 'text',
-                text: `Analyze this photo and provide:\n1. Skin tone (e.g., fair, medium, dark, olive)\n2. Hair type and color\n3. Body type (e.g., petite, average, athletic, plus-size)\n4. Face shape (e.g., round, oval, square, oblong)\n5. Notable features (e.g., glasses, tattoos, scars - just mention if visible)\n\nKeep it concise and factual.`,
+                text: `Analyze this photo for fashion styling only. Do not assume gender identity. If presentation is unclear, say "gender presentation: unspecified" and keep the outfit gender-neutral. Provide concise factual details:
+1. Apparent style/gender presentation cues, only if visually clear
+2. Skin tone (e.g., fair, medium, dark, olive)
+3. Hair type and color
+4. Body/build from clothing fit (e.g., petite, average, athletic, plus-size)
+5. Face shape (e.g., round, oval, square, oblong)
+6. Notable visible style features (e.g., glasses, beard, long hair, accessories)
+
+Keep it concise, factual, and avoid guessing beyond visible evidence.`,
               },
             ],
           },
@@ -129,7 +137,28 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
 
-    const outfitPrompt = `Based on this person's appearance:\n${photoAnalysis}\n\nAnd their style preferences:\n${preferencesText}\n\nProvide a personalized outfit recommendation including:\n1. Outfit name (catchy, professional title)\n2. Color palette (3-4 colors)\n3. Key pieces (5-7 items)\n4. Styling tips\n5. Occasions suitable for this outfit\n\nFormat as JSON with keys: outfitName, colorPalette, keyPieces, stylingTips, occasions`;
+    const outfitPrompt = `Based on this person's appearance:
+${photoAnalysis}
+
+And their style preferences:
+${preferencesText}
+
+Create one detailed but concise outfit recommendation. Important:
+- Do not force a gender if the photo analysis is uncertain; use a person/model description that matches visible presentation cues only.
+- The written outfit and image prompt must describe the same clothes, colors, shoes, and accessories.
+- Keep explanations practical and concise.
+
+Return ONLY valid JSON with these keys:
+{
+  "outfitName": "catchy professional title",
+  "outfitDescription": "2-3 concise sentences describing the complete outfit from top to shoes/accessories",
+  "explanation": "2-3 concise sentences explaining why it fits the user's appearance, occasion, budget, height, age, and body type",
+  "colorPalette": ["3-4 color names"],
+  "keyPieces": ["5-7 specific garments/accessories that match the image prompt"],
+  "stylingTips": ["3-5 concise styling tips"],
+  "occasions": ["2-4 suitable occasions"],
+  "imagePrompt": "one photorealistic full-body fashion image prompt that exactly matches outfitDescription, colorPalette, keyPieces, shoes, and accessories; use neutral words like person/model unless presentation is visually clear"
+}`;
 
     let outfitResponse;
     try {
@@ -159,26 +188,32 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       } else {
         outfitRecommendation = {
           outfitName: 'Personalized Outfit',
+          outfitDescription: outfitText,
+          explanation: 'This recommendation is based on your uploaded photo and selected preferences.',
           colorPalette: ['Navy', 'White', 'Gold'],
           keyPieces: outfitText.split('\n').slice(0, 7),
-          stylingTips: 'Style according to your preferences',
-          occasions: 'Perfect for any occasion',
+          stylingTips: ['Keep the fit balanced and comfortable.', 'Match accessories to the main color palette.'],
+          occasions: ['Selected occasion', 'Smart casual settings'],
+          imagePrompt: outfitText,
         };
       }
-    } catch (e) {
+    } catch {
       outfitRecommendation = {
         outfitName: 'Personalized Outfit',
+        outfitDescription: outfitText,
+        explanation: 'This recommendation is based on your uploaded photo and selected preferences.',
         colorPalette: ['Navy', 'White', 'Gold'],
         keyPieces: outfitText.split('\n').slice(0, 7),
-        stylingTips: 'Style according to your preferences',
-        occasions: 'Perfect for any occasion',
+        stylingTips: ['Keep the fit balanced and comfortable.', 'Match accessories to the main color palette.'],
+        occasions: ['Selected occasion', 'Smart casual settings'],
+        imagePrompt: outfitText,
       };
     }
 
     console.log('✅ Outfit recommendation generated');
 
     // Step 3: Generate image prompt for outfit visualization
-    const imagePromptText = `Professional fashion model wearing ${outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors.`;
+    const imagePromptText = outfitRecommendation.imagePrompt || `Photorealistic full-body fashion image of a person wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors. Include the same key pieces, shoes, and accessories described in the outfit recommendation.`;
 
     const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
     console.log('🎨 Image generation initiated');
