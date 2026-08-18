@@ -270,6 +270,7 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
       || outfitRecommendation.outfitDescription
       || outfitRecommendation.outfitName
       || 'a stylish, on-trend outfit';
+    const basePrompt = `${physicalDescription} wearing ${outfitVisual}`;
  
     // Framing cues repeated at both start and end (models weight prompt
     // edges more heavily), explicit aspect-ratio-friendly full-body pose,
