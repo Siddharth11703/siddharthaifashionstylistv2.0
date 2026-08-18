@@ -130,7 +130,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     let outfitResponse;
     try {
       outfitResponse = await createGroqChatCompletion({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b',
         max_completion_tokens: 1024,
         messages: [
           {
