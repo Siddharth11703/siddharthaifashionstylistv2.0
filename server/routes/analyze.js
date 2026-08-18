@@ -174,7 +174,7 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
     try {
       outfitResponse = await createGroqChatCompletion({
         model: 'openai/gpt-oss-120b',
-        max_completion_tokens: 1536,
+        max_completion_tokens: 2048,
         messages: [
           {
             role: 'user',
