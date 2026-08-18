@@ -4,8 +4,28 @@ export default function OutfitResult({ result, onSave, user }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeTab, setActiveTab] = useState('outfit');
+  const [lowResWarning, setLowResWarning] = useState(false);
 
-  const { photoAnalysis, outfitRecommendation, generatedImageUrl } = result;
+  const { photoAnalysis, outfitRecommendation, generatedImageUrl, generatedImageSrcSet } = result;
+
+  // onLoad will receive the event; check natural size vs display * DPR
+  const handleImageLoad = (e) => {
+    setImageLoaded(true);
+    try {
+      const img = e.target;
+      const naturalWidth = img.naturalWidth || 0;
+      const displayWidth = img.clientWidth || img.getBoundingClientRect().width || 0;
+      const dpr = window.devicePixelRatio || 1;
+      // require a 1.3x buffer for good sharpness on high-DPI screens
+      if (naturalWidth < Math.round(displayWidth * dpr * 1.3)) {
+        setLowResWarning(true);
+      } else {
+        setLowResWarning(false);
+      }
+    } catch (err) {
+      // ignore
+    }
+  };
 
   return (
     <div className="fade-in-up space-y-6">
@@ -26,7 +46,6 @@ export default function OutfitResult({ result, onSave, user }) {
         {[
           { id: 'outfit', label: 'Outfit Look' },
           { id: 'analysis', label: 'Your Profile' },
-          
         ].map(tab => (
           <button
             key={tab.id}
@@ -58,15 +77,24 @@ export default function OutfitResult({ result, onSave, user }) {
                 )}
                 <img
                   src={generatedImageUrl}
+                  srcSet={generatedImageSrcSet || undefined}
+                  sizes="(max-width: 768px) 100vw, 768px"
                   alt="AI generated outfit"
-                  className={`w-full object-cover rounded-2xl transition-opacity duration-700 ${imageLoaded ? 'opacity-100' : 'opacity-0 h-0'}`}
-                  onLoad={() => setImageLoaded(true)}
+                  className={`w-full object-contain rounded-2xl transition-opacity duration-700 ${imageLoaded ? 'opacity-100' : 'opacity-0 h-0'}`}
+                  style={{ maxHeight: '820px', imageRendering: '-webkit-optimize-contrast' }}
+                  onLoad={handleImageLoad}
                   onError={() => setImageError(true)}
                 />
                 {imageLoaded && (
                   <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
                     AI Generated · Styled for you
+                  </div>
+                )}
+
+                {lowResWarning && (
+                  <div className="absolute bottom-3 left-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 text-xs px-3 py-1 rounded-full">
+                    Image may be low resolution on your screen. Try regenerating at higher quality.
                   </div>
                 )}
               </div>
@@ -151,35 +179,13 @@ export default function OutfitResult({ result, onSave, user }) {
         </div>
       )}
 
-      {/* Tips Tab */}
-      {activeTab === 'tips' && (
-        <div className="glass rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-pink-500/20 border border-pink-500/30 flex items-center justify-center">
-              <span className="text-sm">✨</span>
-            </div>
-            <h4 className="text-white font-semibold">Personalized Styling Tips</h4>
-          </div>
-          <div className="space-y-3">
-            {outfitRecommendation.stylingTips?.split(/\d\.|\n/).filter(t => t.trim()).map((tip, i) => (
-              <div key={i} className="flex gap-3">
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5">
-                  {i + 1}
-                </div>
-                <p className="text-white/80 text-sm leading-relaxed">{tip.trim()}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Save Button */}
       <button
         onClick={onSave}
         className="w-full py-4 rounded-2xl btn-primary text-white font-semibold text-base flex items-center justify-center gap-2 shadow-lg"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-[...]
         </svg>
         Save This Outfit
       </button>
