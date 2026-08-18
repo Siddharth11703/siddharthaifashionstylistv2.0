@@ -1,20 +1,38 @@
-# React + Vite
+# Siddharth AI Fashion Stylist
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AI-powered outfit recommendations built with React, Vite, Express, Groq, Pollinations AI, and Supabase.
 
-Currently, two official plugins are available:
+## Local setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Install dependencies:
 
-## React Compiler
+   ```bash
+   npm install
+   ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+2. Create a Supabase project and run `server/schema.sql` in the Supabase SQL editor.
 
-## Expanding the ESLint configuration
+3. Create a `.env` file with:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+   ```bash
+   GROQ_API_KEY=your-groq-api-key
+   SUPABASE_URL=https://your-project-ref.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   ```
 
+   `SUPABASE_ANON_KEY` can be used as a fallback for local development if your Row Level Security policies allow the server operations.
+
+4. Run the app and API server:
+
+   ```bash
+   npm run dev:all
+   ```
+
+## Build
+
+```bash
+npm run build
+```
 
 ## Vercel custom domain (free)
 
