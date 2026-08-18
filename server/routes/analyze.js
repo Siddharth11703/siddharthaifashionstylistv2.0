@@ -256,29 +256,21 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
 
     console.log('✅ Outfit recommendation generated');
 
-   // Step 3: Build the image prompt ourselves from VERIFIED facts rather
-    // than trusting an LLM to faithfully repeat gender/body/face details —
-    // this is what guarantees the generated image matches the person and
-    // is a genuine full-body shot.
-    const age = preferences.age ? `${preferences.age}-year-old` : '';
-    const genderNoun = { Male: 'man', Female: 'woman', Other: 'person' }[visionFacts.gender] || 'person';
-    const featuresClause = visionFacts.styleFeatures ? `, ${visionFacts.styleFeatures}` : '';
- 
-    const physicalDescription = `A ${age} ${visionFacts.gender.toLowerCase()}, a ${genderNoun} with ${visionFacts.skinTone} skin, ${visionFacts.hairColor} ${visionFacts.hairType} hair, and a ${visionFacts.faceShape} face shape${featuresClause}, with a ${visionFacts.bodyType} build`.replace(/\s+/g, ' ').trim();
- 
-    const outfitVisual = outfitRecommendation.outfitVisualDescription
-      || outfitRecommendation.outfitDescription
-      || outfitRecommendation.outfitName
-      || 'a stylish, on-trend outfit';
-    const basePrompt = `${physicalDescription} wearing ${outfitVisual}`;
- 
-    // Framing cues repeated at both start and end (models weight prompt
-    // edges more heavily), explicit aspect-ratio-friendly full-body pose,
+   // Step 3: Generate image prompt for outfit visualization
+    const outfitVisual = outfitRecommendation.outfitVisualDescription || outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit';
 
-    // Restructured to aggressively force a zoomed-out, full-body view
-    const imagePromptText = `Far full-body shot, extremely wide angle, entire subject is small in the frame, completely zoomed out. Showing entire body from top of head down to shoes with significant empty space above the head and below the feet. Camera perspective is from the ground looking up. ${basePrompt}, standing straight in center frame, fashion editorial photography, natural lighting, sharp focus, 8k resolution, photorealistic.`;
+    const basePrompt = `${physicalDescription}, wearing ${outfitVisual}`;
 
-const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
+    // Pollinations AI (SDXL/Flux) responds best to comma-separated keywords, not sentences. 
+    // Keywords for framing MUST be at the very front of the prompt.
+    const imagePromptText = `Full body shot, extreme wide shot, standing at a distance, head to toe visible, shoes visible. ${basePrompt}, fashion editorial photography, Vogue magazine, 8k resolution, highly detailed, photorealistic, masterpiece.`;
+
+    // Ensure the prompt is URL encoded
+    const encodedPrompt = encodeURIComponent(imagePromptText);
+
+    // Pollinations AI documentation recommends passing specific query parameters for portrait aspect ratio and quality.
+    // &width=768&height=1024 forces a vertical portrait, &nologo=true removes the watermark, &enhance=false prevents Pollinations from overwriting our prompt.
+    const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=1024&nologo=true&enhance=false`;
 console.log('🎨 Image generation initiated'); 
 
     res.json({
