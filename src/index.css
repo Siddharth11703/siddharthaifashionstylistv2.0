@@ -106,3 +106,127 @@
   50% { transform: translateY(-10px); }
 }
 .float { animation: float 3s ease-in-out infinite; }
+/* Container */
+.look-summary-card {
+  background: #111111; /* Deep dark background */
+  border-radius: 12px;
+  padding: 24px;
+  color: #f3f4f6;
+  font-family: system-ui, -apple-system, sans-serif;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid #2a2a2a;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Header & Typography */
+.summary-header h2 {
+  font-size: 2rem;
+  margin-top: 0;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, #d8b4fe, #a855f7); /* Purple gradient */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.summary-section h3 {
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #9ca3af;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 6px;
+}
+
+.description-text {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: #e5e5e5;
+  margin-bottom: 24px;
+}
+
+/* Badges & Swatches */
+.occasion-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.badge {
+  background: #2a2a2a;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  color: #d1d5db;
+  border: 1px solid #404040;
+}
+
+.color-swatches {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.swatch {
+  background: #1f1f1f;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  border: 1px solid #333;
+  color: #e5e5e5;
+}
+
+/* Grid Layout for Lists */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 640px) {
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Custom Bullet Points */
+.styled-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.styled-list li {
+  position: relative;
+  padding-left: 20px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+  color: #d1d5db;
+}
+
+.styled-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #a855f7; /* Matches the brand purple */
+  font-size: 1.2rem;
+  line-height: 1.1;
+}
+
+/* Callout Box for Explanation */
+.rationale {
+  background: #1a1a1a;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #a855f7;
+}
+
+.why-text {
+  margin: 0;
+  line-height: 1.6;
+  color: #d1d5db;
+}
