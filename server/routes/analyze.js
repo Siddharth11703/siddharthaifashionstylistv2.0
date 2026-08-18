@@ -49,14 +49,13 @@ function stripAIThinking(text = '') {
 // Generate image using Pollinations AI via backend proxy
 async function generateImageWithPollinations(prompt, seed) {
   let simplifiedPrompt = prompt;
-
-  if (simplifiedPrompt && simplifiedPrompt.length > 500) {
-    simplifiedPrompt = simplifiedPrompt.substring(0, 500);
-    console.log('[generateImageWithPollinations] truncated prompt to 500 chars');
-  }
-
+  
+  // REMOVED the 500 character truncation block here so the full outfit details reach the AI
+  
   const seedParam = seed ? `&seed=${seed}` : '';
-  const imageUrl = `/api/proxy-image?prompt=${encodeURIComponent(simplifiedPrompt)}&width=768&height=1024&model=flux&nologo=true&enhance=true${seedParam}`;
+  
+  // CHANGED enhance=true to enhance=false so Pollinations doesn't override our strict framing
+  const imageUrl = `/api/proxy-image?prompt=${encodeURIComponent(simplifiedPrompt)}&width=768&height=1024&model=flux&nologo=true&enhance=false${seedParam}`;
   return imageUrl;
 }
 
@@ -138,12 +137,12 @@ const preferencesText = Object.entries(preferences)
 
 const outfitPrompt = `Based on this person's appearance: ${photoAnalysis}
 And their style preferences: ${preferencesText}
-Create one highly creative, stylish, and fashion-forward outfit recommendation.
+Create a modern, trending, realistic outfit recommendation that strictly adheres to their specified budget level. Do not suggest overly extravagant luxury pieces if they asked for a tight budget. Focus on current fashion trends (e.g., streetwear, smart casual, quiet luxury) suitable for their occasion.
 
 Important constraints for the "imagePrompt":
-1. FACE MATCHING: You MUST start the imagePrompt with a highly detailed physical description of the person using EXACT details from the appearance analysis (skin tone, exact hair color and style, face shape, facial hair, glasses, etc.) so the generated image resembles the user.
+1. FACE MATCHING: You MUST start the imagePrompt with a highly detailed physical description of the person using EXACT details from the appearance analysis (skin tone, exact hair color and style, face shape, facial hair, glasses, etc.).
 2. BODY: Explicitly include the user's Body Type and Age.
-3. HIGH FASHION: Describe the outfit in rich detail, specifying fabrics (e.g., silk, tweed, leather), textures, tailoring, and colors.
+3. TREND & BUDGET: Describe the outfit in rich detail, specifying modern, realistic fabrics, tailoring, and colors that fit the budget.
 4. Do not use generic terms like "model" or "person." Use specific terms like "a 25-year-old fair-skinned man with short curly black hair and a styled beard..."
 
 Return ONLY valid JSON with these keys:
@@ -155,7 +154,7 @@ Return ONLY valid JSON with these keys:
   "keyPieces": ["5-7 specific garments/accessories"],
   "stylingTips": ["3-5 concise styling tips"],
   "occasions": ["2-4 suitable occasions"],
-  "imagePrompt": "A highly detailed photorealistic full-body shot of [Insert exact facial/physical description from analysis], wearing [Insert highly detailed outfit with fabrics and textures]. Wide-angle, zoomed out, full head-to-toe visibility."
+  "imagePrompt": "[Insert exact facial/physical description from analysis], wearing [Insert highly detailed trending outfit with realistic fabrics]. Full-length shot, head to shoes fully visible."
 }`;
 
     let outfitResponse;
@@ -213,8 +212,8 @@ Return ONLY valid JSON with these keys:
    // Step 3: Generate image prompt for outfit visualization
 const basePrompt = outfitRecommendation.imagePrompt || `A person wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'}.`;
 
-// Restructured to prioritize the camera angle and full-body requirement first, followed by high-end photography keywords
-const imagePromptText = `Vogue fashion editorial photography, full-body shot, ultra-wide angle, zoomed far out. The complete body from the top of the head down to the bottom of the shoes MUST be clearly visible in the frame. ${basePrompt}, high-end fashion, detailed fabric textures, dynamic lighting, sharp focus, 8k resolution, photorealistic masterpiece.`;
+// Restructured to use specific photography lenses and framing keywords that Flux respects for full-body shots
+const imagePromptText = `Full-length portrait from head to feet, wide shot, subject standing in center frame with clear space above head and below shoes, shot with 35mm lens. ${basePrompt}, fashion editorial photography, natural lighting, sharp focus, 8k resolution, photorealistic.`;
 
 const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
 console.log('🎨 Image generation initiated'); 
