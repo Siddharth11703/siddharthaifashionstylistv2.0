@@ -2,6 +2,19 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import express from 'express';
+// Helper function to clean and parse the vision AI output
+const parseVisionAnalysis = (rawText) => {
+  if (!rawText) return "No appearance data extracted.";
+  
+  // Remove any markdown code blocks (like ```json or ```) that might break the next prompt
+  try {
+    const cleanedText = rawText.replace(/```[a-zA-Z]*\n/g, '').replace(/```/g, '').trim();
+    return cleanedText;
+  } catch (error) {
+    console.error("Error parsing vision analysis:", error);
+    return rawText;
+  }
+};
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
