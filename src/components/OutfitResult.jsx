@@ -158,7 +158,7 @@ export default function OutfitResult({ result, onSave, user }) {
           </div>
         )}
 
-        {/* 'Your Profile' Tab Content (Styled with new custom classes) */}
+      {/* 'Your Profile' Tab Content (Styled with new custom classes) */}
         {activeTab === 'analysis' && (
           <div className="profile-analysis-card">
             <h3>Your Profile</h3>
@@ -170,7 +170,9 @@ export default function OutfitResult({ result, onSave, user }) {
             </div>
           </div>
         )}
-      </div>
-    );
-}
+      </div> {/* <--- Closes the space-y-4 div */}
+    </> {/* <--- Closes the React Fragment */}
+  </div> {/* <--- Closes the main wrapper div */}
+  );
+}  
 
