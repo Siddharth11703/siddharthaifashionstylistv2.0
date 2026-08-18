@@ -5,6 +5,7 @@ export default function SavedOutfits({ user, onBack }) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchOutfits();
@@ -12,11 +13,16 @@ export default function SavedOutfits({ user, onBack }) {
 
   const fetchOutfits = async () => {
     try {
+      setError('');
       const res = await fetch(`/api/users/outfits/${user.id}`);
       const data = await res.json();
-      if (data.success) setOutfits(data.outfits);
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to load saved outfits');
+      }
+      setOutfits(data.outfits);
     } catch (err) {
       console.error(err);
+      setError(err.message || 'Unable to load saved outfits');
     } finally {
       setLoading(false);
     }
@@ -26,15 +32,21 @@ export default function SavedOutfits({ user, onBack }) {
     if (!confirm('Delete this outfit?')) return;
     setDeleting(outfitId);
     try {
-      await fetch(`/api/users/outfits/${outfitId}`, {
+      setError('');
+      const res = await fetch(`/api/users/outfits/${outfitId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id }),
       });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to delete outfit');
+      }
       setOutfits(o => o.filter(x => x.id !== outfitId));
       if (selected?.id === outfitId) setSelected(null);
     } catch (err) {
       console.error(err);
+      setError(err.message || 'Unable to delete outfit');
     } finally {
       setDeleting(null);
     }
@@ -66,6 +78,11 @@ export default function SavedOutfits({ user, onBack }) {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-8">
+        {error && (
+          <div className="mb-6 bg-red-500/15 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {[...Array(8)].map((_, i) => (
@@ -187,6 +204,16 @@ export default function SavedOutfits({ user, onBack }) {
                   <p className="text-white/70 text-sm leading-relaxed">{selected.outfit_explanation}</p>
                 </div>
               )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => deleteOutfit(selected.id)}
+                  disabled={deleting === selected.id}
+                  className="px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 disabled:opacity-50 text-sm font-medium"
+                >
+                  {deleting === selected.id ? 'Deleting...' : 'Delete Outfit'}
+                </button>
+              </div>
 
               <div className="grid grid-cols-3 gap-2 pt-2">
                 {[

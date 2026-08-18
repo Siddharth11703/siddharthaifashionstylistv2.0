@@ -92,7 +92,16 @@ router.delete('/outfits/:outfitId', (req, res) => {
     const { outfitId } = req.params;
     const { userId } = req.body;
 
-    db.prepare('DELETE FROM saved_outfits WHERE id = ? AND user_id = ?').run(outfitId, userId);
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const result = db.prepare('DELETE FROM saved_outfits WHERE id = ? AND user_id = ?').run(outfitId, userId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Saved outfit not found' });
+    }
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

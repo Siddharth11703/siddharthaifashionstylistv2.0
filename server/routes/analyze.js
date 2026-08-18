@@ -2,7 +2,7 @@ import https from 'https';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { Groq } from 'groq-sdk';
-import { router as userRouter, db } from './users.js';
+import db from '../db.js';
 import express from 'express';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -17,7 +17,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 console.log('GROQ_API_KEY present:', !!process.env.GROQ_API_KEY);
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.GROQ_API_KEY || 'missing-groq-api-key',
 });
 
 // Generate image using Pollinations AI via backend proxy
@@ -37,13 +37,25 @@ async function generateImageWithPollinations(prompt, seed) {
 // Main analysis endpoint
 router.post('/analyze', upload.single('photo'), async (req, res) => {
   try {
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ error: 'GROQ_API_KEY is not configured' });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'No photo provided' });
     }
 
-    const { preferences } = req.body;
+    const preferences = req.body.preferences
+      ? JSON.parse(req.body.preferences)
+      : {
+          occasion: req.body.occasion,
+          budget: req.body.budget,
+          height: req.body.height,
+          age: req.body.age,
+          bodyType: req.body.bodyType,
+        };
 
-    if (!preferences) {
+    if (!Object.values(preferences).some(Boolean)) {
       return res.status(400).json({ error: 'No preferences provided' });
     }
 

@@ -1,10 +1,36 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '..', 'styleai.db');
+const sourceDbPath = path.join(__dirname, '..', 'styleai.db');
 
+const resolveDbPath = () => {
+  if (process.env.DATABASE_PATH) {
+    return process.env.DATABASE_PATH;
+  }
+
+  // Vercel/serverless deployments mount the project directory as read-only.
+  // SQLite needs to create journal/WAL files next to the database, so use /tmp there.
+  if (process.env.VERCEL === '1') {
+    const tmpDbDir = path.join(os.tmpdir(), 'siddharth-ai-fashion-stylist');
+    const tmpDbPath = path.join(tmpDbDir, 'styleai.db');
+
+    fs.mkdirSync(tmpDbDir, { recursive: true });
+
+    if (!fs.existsSync(tmpDbPath) && fs.existsSync(sourceDbPath)) {
+      fs.copyFileSync(sourceDbPath, tmpDbPath);
+    }
+
+    return tmpDbPath;
+  }
+
+  return sourceDbPath;
+};
+
+const dbPath = resolveDbPath();
 const db = new Database(dbPath);
 
 db.exec(`
