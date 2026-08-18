@@ -131,29 +131,32 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     const photoAnalysis = stripAIThinking(analysisResponse.choices?.[0]?.message?.content || '');
     console.log('✅ Photo analysis complete');
 
-    // Step 2: Generate outfit recommendation based on analysis and preferences
-    const preferencesText = Object.entries(preferences)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ');
+   // Step 2: Generate outfit recommendation based on analysis and preferences
+const preferencesText = Object.entries(preferences)
+  .map(([key, value]) => `${key}: ${value}`)
+  .join(', ');
 
-   const outfitPrompt = `Based on this person's appearance: ${photoAnalysis}
-    And their style preferences: ${preferencesText}
-    Create one detailed but concise outfit recommendation.
-    Important:
-    - Use the Estimated Gender from the photo analysis (e.g., man, woman) in the imagePrompt instead of neutral terms like "person" or "model" so the image generator knows exactly what to draw.
-    - The written outfit and image prompt must describe the same clothes, colors, shoes, and accessories.
-    - Keep explanations practical and concise.
-    Return ONLY valid JSON with these keys:
-    {
-      "outfitName": "catchy professional title",
-      "outfitDescription": "2-3 concise sentences describing the complete outfit from top to shoes/accessories",
-      "explanation": "2-3 concise sentences explaining why it fits the user's appearance, occasion, budget, height, age, and body type",
-      "colorPalette": ["3-4 color names"],
-      "keyPieces": ["5-7 specific garments/accessories that match the image prompt"],
-      "stylingTips": ["3-5 concise styling tips"],
-      "occasions": ["2-4 suitable occasions"],
-      "imagePrompt": "photorealistic full-body head-to-toe shot, wide angle lens, standing far away from camera, feet and shoes visible in frame, matching outfitDescription, colorPalette, keyPieces, shoes, and accessories. Specify the gender explicitly (e.g. 'a handsome man wearing...' or 'a beautiful woman wearing...')."
-    }`; 
+const outfitPrompt = `Based on this person's appearance: ${photoAnalysis}
+And their style preferences: ${preferencesText}
+Create one highly creative, stylish, and fashion-forward outfit recommendation.
+
+Important:
+- You MUST explicitly include the user's Body Type (e.g., plus-size, curvy, athletic) and Age from the preferences/analysis in the imagePrompt so the image generator accurately reflects their body weight.
+- Use the Estimated Gender from the photo analysis (e.g., man, woman) in the imagePrompt instead of neutral terms like "person" or "model".
+- The written outfit and image prompt must describe the exact same highly creative clothes, colors, shoes, and accessories.
+- Keep explanations practical and concise.
+
+Return ONLY valid JSON with these keys:
+{
+  "outfitName": "catchy professional title",
+  "outfitDescription": "2-3 concise sentences describing the complete outfit from top to shoes/accessories",
+  "explanation": "2-3 concise sentences explaining why it fits the user's appearance, occasion, budget, height, age, and body type",
+  "colorPalette": ["3-4 color names"],
+  "keyPieces": ["5-7 specific garments/accessories that match the image prompt"],
+  "stylingTips": ["3-5 concise styling tips"],
+  "occasions": ["2-4 suitable occasions"],
+  "imagePrompt": "photorealistic full-body head-to-toe shot, wide angle lens, standing far away from camera, feet and shoes visible in frame, matching outfitDescription, colorPalette, keyPieces, shoes, and accessories. Specify the gender, age, and body type explicitly (e.g. 'a 25-year-old plus-size handsome man wearing...')."
+}`; 
 
     let outfitResponse;
     try {
