@@ -145,7 +145,7 @@ export default function OutfitResult({ result, onSave, user }) {
               </div>
             )}
 
-            {activeTab === 'analysis' && (
+           {activeTab === 'analysis' && (
               <div className="glass rounded-2xl p-5 border border-white/10">
                 <h3 className="text-white font-semibold mb-2">Photo Analysis</h3>
                 <p className="text-white/70 leading-relaxed text-sm whitespace-pre-line">
@@ -154,9 +154,9 @@ export default function OutfitResult({ result, onSave, user }) {
               </div>
             )}
           </div>
-        </> {/* <--- Closes the new fragment */}
-    </div> {/* <--- Closes the fade-in-up space-y-6 div */}
-  );
+        </>
+      </div>
+    );
 }
 
-export default OutfitResult; // (Or whatever your export statement is at the very bottom)
+export default OutfitResult; 
