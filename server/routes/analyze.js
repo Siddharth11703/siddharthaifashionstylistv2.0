@@ -157,7 +157,7 @@ Return ONLY valid JSON with these keys:
   "keyPieces": ["5-7 specific garments/accessories that match the image prompt"],
   "stylingTips": ["3-5 concise styling tips"],
   "occasions": ["2-4 suitable occasions"],
-  "imagePrompt": "one photorealistic full-body fashion image prompt that exactly matches outfitDescription, colorPalette, keyPieces, shoes, and accessories; use neutral words like person/model unless presentation is visually clear"
+  "imagePrompt": "photorealistic full-body head-to-toe shot, wide angle fashion portrait showing complete person from head down to shoes, full length view, matching outfitDescription, colorPalette, keyPieces, shoes, and accessories; use neutral words like person/model unless presentation is visually clear"
 }`;
 
     let outfitResponse;
@@ -213,9 +213,9 @@ Return ONLY valid JSON with these keys:
     console.log('✅ Outfit recommendation generated');
 
     // Step 3: Generate image prompt for outfit visualization
-    const imagePromptText = outfitRecommendation.imagePrompt || `Photorealistic full-body fashion image of a person wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors. Include the same key pieces, shoes, and accessories described in the outfit recommendation.`;
-
-    const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
+  const basePrompt = outfitRecommendation.imagePrompt || `Photorealistic fashion image of a person wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'} with ${(outfitRecommendation.colorPalette || []).join(' and ')} colors.`;
+  const imagePromptText = `full-body head-to-toe shot, wide angle, showing entire body and shoes, ${basePrompt}`;
+  const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
     console.log('🎨 Image generation initiated');
 
     res.json({
