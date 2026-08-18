@@ -158,21 +158,21 @@ export default function OutfitResult({ result, onSave, user }) {
           </div>
         )}
 
-      {/* 'Your Profile' Tab Content (Styled with new custom classes) */}
+      // ... other code above line 161
         {activeTab === 'analysis' && (
-          <div className="profile-analysis-card">
-            <h3>Your Profile</h3>
-            <p>Here is what our AI detected from your photo:</p>
-            <div className="analysis-text-wrapper">
-              <p className="whitespace-pre-line text-sm leading-relaxed">
+          <div className="profile-analysis-card p-5 rounded-2xl glass border border-white/10">
+            <h3 className="text-white font-semibold mb-2">Your Profile</h3>
+            <p className="text-white/70 leading-relaxed text-sm">Here is what our AI detected from your photo:</p>
+            <div className="analysis-text-wrapper mt-3">
+              <p className="whitespace-pre-line text-white/50 text-xs">
                 {typeof photoAnalysis === 'string' ? photoAnalysis : JSON.stringify(photoAnalysis, null, 2)}
               </p>
             </div>
           </div>
         )}
-      </div> {/* <--- Closes the space-y-4 div */}
-    </> {/* <--- Closes the React Fragment */}
-  </div> {/* <--- Closes the main wrapper div */}
+      </div> {/* Closes space-y-4 div */}
+    </> {/* Closes React Fragment */}
+  </div> {/* Closes main wrapper div */}
   );
-}  
+}
 
