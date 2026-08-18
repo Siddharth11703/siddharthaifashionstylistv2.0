@@ -140,11 +140,11 @@ const outfitPrompt = `Based on this person's appearance: ${photoAnalysis}
 And their style preferences: ${preferencesText}
 Create one highly creative, stylish, and fashion-forward outfit recommendation.
 
-Important:
-- You MUST explicitly include the user's Body Type (e.g., plus-size, curvy, athletic) and Age from the preferences/analysis in the imagePrompt so the image generator accurately reflects their body weight.
-- Use the Estimated Gender from the photo analysis (e.g., man, woman) in the imagePrompt instead of neutral terms like "person" or "model".
-- The written outfit and image prompt must describe the exact same highly creative clothes, colors, shoes, and accessories.
-- Keep explanations practical and concise.
+Important constraints for the "imagePrompt":
+1. FACE MATCHING: You MUST start the imagePrompt with a highly detailed physical description of the person using EXACT details from the appearance analysis (skin tone, exact hair color and style, face shape, facial hair, glasses, etc.) so the generated image resembles the user.
+2. BODY: Explicitly include the user's Body Type and Age.
+3. HIGH FASHION: Describe the outfit in rich detail, specifying fabrics (e.g., silk, tweed, leather), textures, tailoring, and colors.
+4. Do not use generic terms like "model" or "person." Use specific terms like "a 25-year-old fair-skinned man with short curly black hair and a styled beard..."
 
 Return ONLY valid JSON with these keys:
 {
@@ -152,11 +152,11 @@ Return ONLY valid JSON with these keys:
   "outfitDescription": "2-3 concise sentences describing the complete outfit from top to shoes/accessories",
   "explanation": "2-3 concise sentences explaining why it fits the user's appearance, occasion, budget, height, age, and body type",
   "colorPalette": ["3-4 color names"],
-  "keyPieces": ["5-7 specific garments/accessories that match the image prompt"],
+  "keyPieces": ["5-7 specific garments/accessories"],
   "stylingTips": ["3-5 concise styling tips"],
   "occasions": ["2-4 suitable occasions"],
-  "imagePrompt": "photorealistic full-body head-to-toe shot, wide angle lens, standing far away from camera, feet and shoes visible in frame, matching outfitDescription, colorPalette, keyPieces, shoes, and accessories. Specify the gender, age, and body type explicitly (e.g. 'a 25-year-old plus-size handsome man wearing...')."
-}`; 
+  "imagePrompt": "A highly detailed photorealistic full-body shot of [Insert exact facial/physical description from analysis], wearing [Insert highly detailed outfit with fabrics and textures]. Wide-angle, zoomed out, full head-to-toe visibility."
+}`;
 
     let outfitResponse;
     try {
@@ -211,10 +211,10 @@ Return ONLY valid JSON with these keys:
     console.log('✅ Outfit recommendation generated');
 
    // Step 3: Generate image prompt for outfit visualization
-const basePrompt = outfitRecommendation.imagePrompt || `Photorealistic fashion image wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'}.`;
+const basePrompt = outfitRecommendation.imagePrompt || `A person wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'}.`;
 
-// Added aggressive keywords to force the AI to zoom out and include both head and feet
-const imagePromptText = `Wide-angle environmental portrait, ultra-wide shot, full-length body. The entire person MUST be in frame from the top of the head and face to the bottom of the feet and shoes. Zoomed out, standing far back, full head-to-toe visibility, ${basePrompt}`;
+// Restructured to prioritize the camera angle and full-body requirement first, followed by high-end photography keywords
+const imagePromptText = `Vogue fashion editorial photography, full-body shot, ultra-wide angle, zoomed far out. The complete body from the top of the head down to the bottom of the shoes MUST be clearly visible in the frame. ${basePrompt}, high-end fashion, detailed fabric textures, dynamic lighting, sharp focus, 8k resolution, photorealistic masterpiece.`;
 
 const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
 console.log('🎨 Image generation initiated'); 
