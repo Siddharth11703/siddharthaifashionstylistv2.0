@@ -210,11 +210,14 @@ Return ONLY valid JSON with these keys:
 
     console.log('✅ Outfit recommendation generated');
 
-    // Step 3: Generate image prompt for outfit visualization
-    const basePrompt = outfitRecommendation.imagePrompt || `Photorealistic fashion image wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'}.`;
-    const imagePromptText = `Full-body shot, zoomed out, standing far away, head-to-toe, wide angle lens, feet and shoes clearly visible in frame, ${basePrompt}`;
-  const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
-    console.log('🎨 Image generation initiated');
+   // Step 3: Generate image prompt for outfit visualization
+const basePrompt = outfitRecommendation.imagePrompt || `Photorealistic fashion image wearing ${outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit'}.`;
+
+// Added aggressive keywords to force the AI to zoom out and include both head and feet
+const imagePromptText = `Wide-angle environmental portrait, ultra-wide shot, full-length body. The entire person MUST be in frame from the top of the head and face to the bottom of the feet and shoes. Zoomed out, standing far back, full head-to-toe visibility, ${basePrompt}`;
+
+const generatedImageUrl = await generateImageWithPollinations(imagePromptText, Math.floor(Math.random() * 1000000));
+console.log('🎨 Image generation initiated'); 
 
     res.json({
       success: true,
