@@ -159,4 +159,3 @@ export default function OutfitResult({ result, onSave, user }) {
     );
 }
 
-export default OutfitResult; 
