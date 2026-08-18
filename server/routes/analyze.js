@@ -3,16 +3,31 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import express from 'express';
 // Helper function to clean and parse the vision AI output
+// Helper function to clean and parse the vision AI output
 const parseVisionAnalysis = (rawText) => {
-  if (!rawText) return "No appearance data extracted.";
+  // Safe defaults in case the AI fails to generate specific keys
+  const defaultFacts = { 
+    gender: 'person', 
+    skinTone: 'average', 
+    hairColor: '', 
+    hairType: '', 
+    faceShape: 'oval', 
+    bodyType: 'average', 
+    styleFeatures: '' 
+  };
   
-  // Remove any markdown code blocks (like ```json or ```) that might break the next prompt
+  if (!rawText) return defaultFacts;
+  
   try {
+    // Remove markdown code blocks and parse into a real JSON object
     const cleanedText = rawText.replace(/```[a-zA-Z]*\n/g, '').replace(/```/g, '').trim();
-    return cleanedText;
+    const parsedData = JSON.parse(cleanedText);
+    
+    // Merge the AI's data with our defaults to guarantee no 'undefined' values
+    return { ...defaultFacts, ...parsedData };
   } catch (error) {
     console.error("Error parsing vision analysis:", error);
-    return rawText;
+    return defaultFacts;
   }
 };
 const router = express.Router();
