@@ -71,7 +71,7 @@ export default function App() {
 
       const data = await parseApiResponse(res);
 
-      if (!res.ok || !data.success) {
+      if (!res.ok || data.success === false) {
         throw new Error(data.error || 'Analysis failed');
       }
 

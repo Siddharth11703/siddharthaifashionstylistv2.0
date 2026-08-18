@@ -42,6 +42,10 @@ async function createGroqChatCompletion(payload) {
   return responseBody;
 }
 
+function stripAIThinking(text = '') {
+  return String(text).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
 // Generate image using Pollinations AI via backend proxy
 async function generateImageWithPollinations(prompt, seed) {
   let simplifiedPrompt = prompt;
@@ -117,7 +121,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       return res.status(502).json({ error: 'Vision provider error', details: err.message || String(err) });
     }
 
-    const photoAnalysis = analysisResponse.choices?.[0]?.message?.content || '';
+    const photoAnalysis = stripAIThinking(analysisResponse.choices?.[0]?.message?.content || '');
     console.log('✅ Photo analysis complete');
 
     // Step 2: Generate outfit recommendation based on analysis and preferences
@@ -144,7 +148,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       return res.status(502).json({ error: 'Outfit provider error', details: err.message || String(err) });
     }
 
-    const outfitText = outfitResponse.choices?.[0]?.message?.content || '';
+    const outfitText = stripAIThinking(outfitResponse.choices?.[0]?.message?.content || '');
 
     // Parse outfit recommendation
     let outfitRecommendation = {};
@@ -180,6 +184,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     console.log('🎨 Image generation initiated');
 
     res.json({
+      success: true,
       photoAnalysis,
       outfitRecommendation,
       generatedImageUrl,
