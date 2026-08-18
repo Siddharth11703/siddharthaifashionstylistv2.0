@@ -164,10 +164,111 @@ export default function OutfitResult({ result, onSave, user }) {
 
       <button
         onClick={onSave}
-        className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all"
-      >
-        {user ? 'Save Outfit' : 'Sign in to Save Outfit'}
-      </button>
-    </div>
+        <div className="flex gap-1 glass rounded-xl p-1 mb-4">
+        {[{ id: 'outfit', label: 'Outfit Look' }, { id: 'details', label: 'Outfit Details' }, { id: 'analysis', label: 'Your Profile' }].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+              activeTab === tab.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {/* Image Section */}
+        {activeTab === 'outfit' && (
+          <div className="rounded-2xl overflow-hidden glass border border-white/10 mb-6">
+            {generatedImageUrl && !imageError ? (
+              <div className="relative">
+                {!imageLoaded && (
+                  <div className="w-full h-96 flex flex-col items-center justify-center gap-3 bg-white/5">
+                    <div className="w-10 h-10 border-2 border-purple-500/40 border-t-purple-400 rounded-full animate-spin" />
+                    <p className="text-white/40 text-sm">Generating your look...</p>
+                  </div>
+                )}
+                <img 
+                  src={generatedImageUrl} 
+                  alt={outfitRecommendation.outfitName || 'AI generated outfit'} 
+                  onLoad={() => setImageLoaded(true)} 
+                  onError={handleImageError}
+                  className={`w-full h-96 object-cover transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`} 
+                />
+              </div>
+            ) : (
+              <div className="w-full h-96 flex items-center justify-center bg-white/5">
+                <p className="text-white/40">No image available</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Premium Styled Details Section */}
+        {(activeTab === 'outfit' || activeTab === 'details') && (
+          <div className="look-summary-card">
+            <div className="summary-header">
+              <h2>{outfitRecommendation.outfitName?.includes('{"outfitName"') ? "Your Curated Look" : outfitRecommendation.outfitName}</h2>
+              {occasions.length > 0 && (
+                <div className="occasion-badges">
+                  {occasions.map(occ => <span key={occ} className="badge">{occ}</span>)}
+                </div>
+              )}
+            </div>
+
+            <div className="summary-section">
+              <p className="description-text">
+                {/* Fallback regex if backend dumps raw JSON */}
+                {outfitRecommendation.outfitDescription?.includes('{"outfitName"') 
+                  ? outfitRecommendation.outfitDescription.match(/"outfitDescription"\s*:\s*"([^"]+)"/)?.[1] || "Stylish modern outfit tailored to your preferences."
+                  : outfitRecommendation.outfitDescription}
+              </p>
+            </div>
+
+            <div className="summary-section">
+              <h3>Color Palette</h3>
+              <div className="color-swatches">
+                {colorPalette.map(c => <span key={c} className="swatch">{c}</span>)}
+              </div>
+            </div>
+
+            <div className="summary-grid">
+              <div className="summary-section lists">
+                <h3>The Pieces</h3>
+                <ul className="styled-list">
+                  {keyPieces.length > 0 ? keyPieces.map(p => <li key={p}>{p}</li>) : <li className="text-white/50">Pieces loading...</li>}
+                </ul>
+              </div>
+
+              <div className="summary-section lists">
+                <h3>Styling Tips</h3>
+                <ul className="styled-list">
+                  {stylingTips.length > 0 ? stylingTips.map(t => <li key={t}>{t}</li>) : <li className="text-white/50">Tips loading...</li>}
+                </ul>
+              </div>
+            </div>
+
+            <div className="summary-section rationale">
+              <h3>Why it works for you</h3>
+              <p className="why-text">
+                 {outfitRecommendation.explanation?.includes('{"outfitName"')
+                  ? outfitRecommendation.outfitDescription.match(/"explanation"\s*:\s*"([^"]+)"/)?.[1] || "Designed based on your profile inputs."
+                  : outfitRecommendation.explanation}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'analysis' && (
+          <div className="glass rounded-2xl p-5 border border-white/10">
+            <h3 className="text-white font-semibold mb-2">Photo Analysis</h3>
+            <p className="text-white/70 leading-relaxed text-sm whitespace-pre-line">
+              {typeof photoAnalysis === 'string' ? photoAnalysis : JSON.stringify(photoAnalysis, null, 2)}
+            </p>
+          </div>
+        )}
+      </div>
   );
 }
