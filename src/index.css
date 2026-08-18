@@ -230,3 +230,52 @@
   line-height: 1.6;
   color: #d1d5db;
 }
+/* Container for profile analysis on analysis tab */
+.profile-analysis-card {
+  background: #111111; /* Match look-summary-card */
+  border-radius: 12px;
+  padding: 24px;
+  color: #f3f4f6; /* Matching look-summary-card text color */
+  font-family: system-ui, -apple-system, sans-serif; /* Explicitly set font */
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid #2a2a2a;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Header within profile card */
+.profile-analysis-card h3 {
+  font-size: 2rem; /* Matching summary-header h2 size */
+  margin-top: 0;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, #d8b4fe, #a855f7); /* Brand purple gradient */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Sub-text within the card */
+.profile-analysis-card > p {
+  color: #9ca3af; /* Match summary-section h3 color */
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 1.1rem;
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+}
+
+/* Wrapper for the actual analysis text, matches description-text and rationale why-text */
+.analysis-text-wrapper {
+  background: #1a1a1a; /* Match rationale background */
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #a855f7; /* Brand purple border left */
+}
+
+/* Actual analysis text styling */
+.analysis-text-wrapper p {
+  color: #d1d5db; /* Match why-text and styled-list li color */
+  font-size: 1.1rem; /* Match why-text size */
+  line-height: 1.6;
+  margin: 0;
+}
