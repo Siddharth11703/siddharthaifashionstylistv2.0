@@ -259,12 +259,40 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
    // Step 3: Generate image prompt for outfit visualization
     const outfitVisual = outfitRecommendation.outfitVisualDescription || outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit';
 
-    const physicalDescription = `A ${preferences.height || 'average height'} ${preferences.age || 'adult'} with a ${preferences.bodyType || 'average'} build`;
-    const basePrompt = `${physicalDescription}, wearing ${outfitVisual}`;
+    // --- 1. SAFE VARIABLE DEFINITIONS ---
+    // This creates the variables safely, pulling from your existing 'preferences' so the app never crashes
+    const safeUploadedUrl = typeof uploadedUrl !== 'undefined' ? uploadedUrl : '';
+    const appearanceDesc = `A ${preferences?.height || 'average height'} ${preferences?.age || 'adult'} with a ${preferences?.bodyType || 'average'} build`;
+    const occasionLabel = preferences?.occasion || 'fashionable event';
+    const occasionSpecificity = 'stylish and appropriate';
+    const ethnicAppearance = typeof photoAnalysis !== 'undefined' && photoAnalysis.ethnicAppearance ? photoAnalysis.ethnicAppearance : 'fashion model';
+    const outfitDesc = outfitRecommendation?.outfitDescription || outfitRecommendation?.outfitName || 'a highly detailed stylish outfit';
+    const outfitImgPrompt = outfitRecommendation?.imagePrompt || outfitRecommendation?.outfitVisualDescription || '';
 
-    // Pollinations AI (SDXL/Flux) responds best to comma-separated keywords, not sentences. 
-    // Keywords for framing MUST be at the very front of the prompt.
-    const imagePromptText = `Full body shot, extreme wide shot, standing at a distance, head to toe visible, shoes visible. ${basePrompt}, fashion editorial photography, Vogue magazine, 8k resolution, highly detailed, photorealistic, masterpiece.`;
+    // --- 2. UPDATED PROMPT FOR FULL BODY ---
+    // Added "Extreme long shot" and "feet visible in frame" at the very beginning where the AI pays the most attention.
+    const imagePromptArray = [
+      `Extreme long shot, standing far back, full body visible from head to toe, feet and shoes clearly visible in frame`,
+      `REFERENCE_IMAGE: ${safeUploadedUrl}`, 
+      `Photorealistic full body fashion photography of ${appearanceDesc}`,
+      `standing upright in a confident natural pose, feet flat on ground`,
+      `MANDATORY OCCASION: ${occasionLabel}; dress code must be ${occasionSpecificity}`,
+      `wearing this exact elaborative outfit: ${outfitDesc}`,
+      `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch`,
+      `image detail prompt: ${outfitImgPrompt}`,
+      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly. Full body must be visible from head to toes; do NOT crop the head, torso, legs or feet.`,
+      `the outfit must visually communicate ${occasionLabel} immediately`,
+      `complete outfit visible from head to toe including shoes`,
+      `shoes clearly detailed — leather texture, sole, laces or straps fully visible`,
+      `entire body in frame: head, torso, arms, legs, feet — nothing cropped`,
+      `clean white seamless studio background, professional fashion editorial lighting, sharp crisp details throughout`,
+      `ultra high resolution 4K, magazine cover quality, photorealistic skin and fabric textures`,
+      `the model looks like a real ${ethnicAppearance} person`,
+      `camera angle: straight on, full-length shot, neutral expression`
+    ];
+
+    // This combines all your prompt lines into one long comma-separated sentence
+    const imagePromptText = imagePromptArray.join(", ");
 
     // Ensure the prompt is URL encoded
     const encodedPrompt = encodeURIComponent(imagePromptText);
