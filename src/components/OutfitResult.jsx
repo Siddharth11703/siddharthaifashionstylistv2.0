@@ -12,6 +12,24 @@ const asList = (value) => {
 };
 
 export default function OutfitResult({ result, onSave, user }) {
+  // Add this function near the top of your component, before the 'return' statement
+  const handleSaveOutfitClick = async () => {
+    // Assuming you have a 'user' or 'session' variable from your Supabase auth state
+    // If you named your auth variable differently, replace 'user' with your variable name
+    if (!user) {
+      alert("Please sign in to save your outfit!");
+      // Optional: If you have a function that opens the sign-in modal, call it here instead of the alert.
+      return;
+    }
+
+    try {
+      // Your existing code/function to save the outfit to Supabase goes here
+      // await saveToSupabase(outfitData);
+      alert("Outfit saved successfully!");
+    } catch (error) {
+      alert("Error saving outfit. Please try again.");
+    }
+  };
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeTab, setActiveTab] = useState('outfit');
@@ -170,6 +188,30 @@ export default function OutfitResult({ result, onSave, user }) {
             </div>
           </div>
         )}
+        
+        {/* --- ADD YOUR SAVE BUTTON HERE --- */}
+        <button 
+          onClick={handleSaveOutfitClick}
+          style={{
+            backgroundColor: '#9333ea', 
+            color: '#ffffff',
+            width: '100%',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            fontWeight: '500',
+            border: 'none',
+            cursor: 'pointer',
+            marginTop: '20px', /* Adds space above the button */
+            marginBottom: '10px', /* Adds space between this and the Try Another Outfit button */
+            transition: 'background-color 0.2s'
+          }}
+          onMouseOver={(e) => e.target.style.backgroundColor = '#7e22ce'}
+          onMouseOut={(e) => e.target.style.backgroundColor = '#9333ea'}
+        >
+          Save Outfit
+        </button>
+        {/* --- END OF SAVE BUTTON --- */}
+
       </div>
     </>
   </div>
