@@ -259,6 +259,7 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
    // Step 3: Generate image prompt for outfit visualization
     const outfitVisual = outfitRecommendation.outfitVisualDescription || outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit';
 
+    const physicalDescription = `A ${preferences.height || 'average height'} ${preferences.age || 'adult'} with a ${preferences.bodyType || 'average'} build`;
     const basePrompt = `${physicalDescription}, wearing ${outfitVisual}`;
 
     // Pollinations AI (SDXL/Flux) responds best to comma-separated keywords, not sentences. 
