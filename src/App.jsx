@@ -188,10 +188,33 @@ export default function App() {
               </div>
             ) : (
               <button
-                onClick={() => setShowAuth(true)}
-                className="px-3 py-1.5 rounded-lg border border-white/15 text-white/60 hover:text-white hover:border-purple-400/50 transition-all text-sm"
-              >
-                Sign in
+               onClick={handleSignOut} /* Ensure you have a Supabase sign-out function linked here */
+    style={{
+      backgroundColor: 'transparent',
+      color: '#ffffff',
+      border: '1px solid #4b5563', /* Dark gray border to match your dark theme */
+      padding: '6px 16px',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '14px'
+    }}
+  >
+    Sign out
+  </button>
+) : (
+  <button 
+    onClick={handleSignIn} /* Your existing sign-in click handler */
+    style={{
+      backgroundColor: 'transparent',
+      color: '#ffffff',
+      border: '1px solid #4b5563', 
+      padding: '6px 16px',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '14px'
+    }}
+  >
+    Sign in 
               </button>
             )}
           </div>
