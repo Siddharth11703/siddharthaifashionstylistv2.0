@@ -179,44 +179,51 @@ export default function App() {
                 Saved
               </button>
             )}
-            {user ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
-                  {user.name[0].toUpperCase()}
-                </div>
-                <span className="text-purple-300 text-sm font-medium hidden sm:block">{user.name.split(' ')[0]}</span>
+           {user ? (
+          <>
+            {/* User Profile Avatar (Your existing code) */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+                {user.name[0].toUpperCase()}
               </div>
-            ) : (
-              <button
-               onClick={handleSignOut} /* Ensure you have a Supabase sign-out function linked here */
-    style={{
-      backgroundColor: 'transparent',
-      color: '#ffffff',
-      border: '1px solid #4b5563', /* Dark gray border to match your dark theme */
-      padding: '6px 16px',
-      borderRadius: '6px',
-      cursor: 'pointer',
-      fontSize: '14px'
-    }}
-  >
-    Sign out
-  </button>
-) : (
-  <button 
-    onClick={handleSignIn} /* Your existing sign-in click handler */
-    style={{
-      backgroundColor: 'transparent',
-      color: '#ffffff',
-      border: '1px solid #4b5563', 
-      padding: '6px 16px',
-      borderRadius: '6px',
-      cursor: 'pointer',
-      fontSize: '14px'
-    }}
-  >
-    Sign in 
-              </button>
-            )}
+              <span className="text-purple-300 text-sm font-medium hidden sm:block">
+                {user.name.split(' ')[0]}
+              </span>
+            </div>
+
+            {/* Sign Out Button */}
+            <button 
+              onClick={handleSignOut} 
+              style={{
+                backgroundColor: 'transparent',
+                color: '#ffffff',
+                border: '1px solid #4b5563', 
+                padding: '6px 16px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Sign out
+            </button>
+          </>
+        ) : (
+          {/* Sign In Button */}
+          <button 
+            onClick={handleSignIn} 
+            style={{
+              backgroundColor: 'transparent',
+              color: '#ffffff',
+              border: '1px solid #4b5563', 
+              padding: '6px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Sign in
+          </button>
+        )} 
           </div>
         </div>
       </header>
