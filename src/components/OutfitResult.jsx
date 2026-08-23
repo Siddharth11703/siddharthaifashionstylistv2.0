@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const asList = (value) => {
   if (Array.isArray(value)) return value.filter(Boolean);
@@ -11,7 +11,7 @@ const asList = (value) => {
   return [];
 };
 
-export default function OutfitResult({ result, onSave, user }) {
+export default function OutfitResult({ result, onSave, onSaved, autoSave = false, user }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [fallbackTried, setFallbackTried] = useState(false);
@@ -22,6 +22,7 @@ export default function OutfitResult({ result, onSave, user }) {
   const [savedOutfitId, setSavedOutfitId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const autoSaveDone = useRef(false);
 
   const { photoAnalysis, outfitRecommendation = {}, generatedImageUrl } = result;
   const colorPalette = asList(outfitRecommendation.colorPalette);
@@ -30,7 +31,7 @@ export default function OutfitResult({ result, onSave, user }) {
   const occasions = asList(outfitRecommendation.occasions);
 
   // 1. Function to SAVE the outfit
-  const handleSaveOutfitClick = async () => {
+  const handleSaveOutfitClick = useCallback(async () => {
     if (!user) {
       onSave?.();
       return;
@@ -64,6 +65,7 @@ export default function OutfitResult({ result, onSave, user }) {
         if (data.outfitId || data.id) {
           setSavedOutfitId(data.outfitId || data.id);
         }
+        onSaved?.();
       } else {
         setSaveError('Failed to save outfit. Please try again.');
       }
@@ -72,7 +74,15 @@ export default function OutfitResult({ result, onSave, user }) {
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [user, onSave, onSaved, result, photoAnalysis, outfitRecommendation, generatedImageUrl]);
+
+  // The user clicked "Save Outfit" while signed out: finish that save as soon as sign-in lands.
+  useEffect(() => {
+    if (autoSave && user && !isSaved && !autoSaveDone.current) {
+      autoSaveDone.current = true;
+      handleSaveOutfitClick();
+    }
+  }, [autoSave, user, isSaved, handleSaveOutfitClick]);
 
   // 2. Function to UNSAVE the outfit
   const handleUnsaveOutfitClick = async () => {

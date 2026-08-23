@@ -114,6 +114,10 @@ const FULL_BODY_FRAMING = 'full body photo, head to toe, shoes and floor visible
 
 // Helper: validate generated image using Groq vision model (returns { nsfwProbability, similarity, explanation })
 async function validateImageWithGroq(groqClient, imageUrl, outfitText) {
+  // The image bytes are already in memory from the warm-up, so hand them to Groq inline instead of
+  // making it re-download the (slow to serve) generated image.
+  const inlineImage = imageCache.get(imageUrl);
+  const imagePayload = inlineImage ? { url: inlineImage } : { url: imageUrl };
   try {
     const response = await groqClient.chat.completions.create({
       model: GROQ_VISION_MODEL,
@@ -123,7 +127,7 @@ async function validateImageWithGroq(groqClient, imageUrl, outfitText) {
           content: [
             {
               type: 'image_url',
-              image_url: { url: imageUrl },
+              image_url: imagePayload,
             },
             {
               type: 'text',
@@ -170,11 +174,24 @@ Answer immediately with the JSON object only: no reasoning, no commentary, no ma
   }
 }
 
+// Warmed image bytes, keyed by URL, so the validator does not have to fetch them again.
+// Entries are short-lived: one request only needs them between warm-up and validation.
+const imageCache = new Map();
+
+function cacheImage(url, dataUrl) {
+  imageCache.set(url, dataUrl);
+  setTimeout(() => imageCache.delete(url), 60000).unref?.();
+}
+
 // Pollinations generates the image on the first GET; pre-fetching it makes the URL cheap to load later.
 async function warmImageUrl(url, timeoutMs = 45000) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-    await response.arrayBuffer();
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (response.ok && buffer.length) {
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      cacheImage(url, `data:${contentType};base64,${buffer.toString('base64')}`);
+    }
     return response.ok;
   } catch (err) {
     console.warn('Image warm-up failed:', err?.message || err);
@@ -182,27 +199,18 @@ async function warmImageUrl(url, timeoutMs = 45000) {
   }
 }
 
-// Generate image using Pollinations AI (returns url + srcset)
+// Generate image using Pollinations AI
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
 
-  // 2:3 is the framing that reliably keeps hair and shoes inside the frame; taller 9:16 canvases
-  // make the generator push the feet against the bottom edge.
-  const widths = [576, 768, 1024];
-  const srcParts = widths.map((w) => {
-    const h = Math.round((w * 3) / 2);
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
-  });
+  // 2:3 keeps hair and shoes inside the frame (taller canvases push the feet against the bottom
+  // edge). 768x1152 renders noticeably faster than 1024x1536 and is still larger than the card.
+  const width = 768;
+  const height = 1152;
+  const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
 
-  const defaultWidth = 1024;
-  const defaultHeight = 1536;
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
-
-  return {
-    url: defaultUrl,
-    srcset: srcParts.join(', '),
-  };
+  return { url };
 }
 
 // Rank candidates so a safe full-body image always beats a cropped one, similarity breaking ties.
@@ -219,6 +227,8 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   const occasionGuidance = buildOccasionGuidance(occasion);
 
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  const startedAt = Date.now();
+  const elapsed = () => `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
 
   const photoData = fs.readFileSync(photoPath);
   const base64Photo = photoData.toString('base64');
@@ -257,6 +267,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   } catch (visionError) {
     console.warn(`Vision analysis failed with model ${GROQ_VISION_MODEL}:`, visionError.message);
   }
+  console.log(`[analyze] photo analysis done at ${elapsed()}`);
 
   // Step 2: Generate outfit recommendation text with persona-aware styling
   const textResponse = await groq.chat.completions.create({
@@ -288,6 +299,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   if (!outfitRecommendation) {
     throw new Error('Failed to generate outfit recommendation');
   }
+  console.log(`[analyze] recommendation done at ${elapsed()}`);
 
 // 1. Keep appearance brief so it doesn't waste prompt length or force a face close-up
 const simpleAppearance = `${photoAnalysis.ethnicAppearance || ''} ${photoAnalysis.gender || 'person'}, ${photoAnalysis.skinTone || 'medium'} skin, ${bodyType || 'average'} build`;
@@ -305,7 +317,6 @@ const baseImagePromptParts = [
   const similarityThreshold = parseFloat(process.env.SIMILARITY_THRESHOLD || '0.30');
 
   let generatedImageUrl = null;
-  let generatedImageSrcSet = null;
   let imageValidation = { nsfwProbability: 1, similarity: 0, fullBody: false, explanation: 'not validated' };
   // A cropped image is a defect, so keep the best candidate instead of whatever the last attempt produced.
   let bestCandidate = null;
@@ -324,11 +335,13 @@ const baseImagePromptParts = [
 
       const imageResult = await generateImageWithPollinations(fullImagePrompt, seed);
 
-      // Pollinations renders on first request; warm the URL so the validator can fetch it in time
+      // Pollinations renders on first request; warm the URL so the browser gets a cached image
       await warmImageUrl(imageResult.url);
+      console.log(`[analyze] image attempt ${attempt} rendered at ${elapsed()}`);
 
       // Validate the generated image using Groq vision model
       const validation = await validateImageWithGroq(groq, imageResult.url, `${outfitRecommendation.outfitName}: ${outfitRecommendation.outfitDescription}`);
+      console.log(`[analyze] image attempt ${attempt} validated at ${elapsed()}`);
       const candidate = { result: imageResult, validation };
       const isSafe = validation.nsfwProbability <= nsfwThreshold;
 
@@ -351,7 +364,6 @@ const baseImagePromptParts = [
 
   if (bestCandidate) {
     generatedImageUrl = bestCandidate.result.url;
-    generatedImageSrcSet = bestCandidate.result.srcset;
     imageValidation = bestCandidate.validation;
   }
 
@@ -359,7 +371,6 @@ const baseImagePromptParts = [
   if (imageValidation.nsfwProbability > nsfwThreshold) {
     console.warn('Final generated image failed the safety check. Returning null image to frontend. Validation:', imageValidation);
     generatedImageUrl = null;
-    generatedImageSrcSet = null;
   } else if (!imageValidation.fullBody || imageValidation.similarity < similarityThreshold) {
     console.warn('Final generated image is imperfect but safe; keeping it. Validation:', imageValidation);
   }
@@ -369,7 +380,6 @@ const baseImagePromptParts = [
     photoAnalysis,
     outfitRecommendation,
     generatedImageUrl,
-    generatedImageSrcSet,
     photoPath: filename,
     referenceImageUrl: uploadedUrl,
     imageValidation,
