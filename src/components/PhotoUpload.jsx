@@ -1,5 +1,29 @@
 import { useState, useRef, useCallback } from 'react';
 
+// A 768px photo is plenty for skin-tone/appearance analysis and keeps the upload plus the vision
+// request small, which is the biggest chunk of the wait before the outfit appears.
+const MAX_PHOTO_SIZE = 768;
+
+async function downscalePhoto(file) {
+  if (typeof createImageBitmap !== 'function') return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_PHOTO_SIZE / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1) return file;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 export default function PhotoUpload({ onPhotoSelected, photo }) {
   const [isDragging, setIsDragging] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -8,10 +32,11 @@ export default function PhotoUpload({ onPhotoSelected, photo }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const handleFile = useCallback((file) => {
+  const handleFile = useCallback(async (file) => {
     if (!file || !file.type.startsWith('image/')) return;
-    const url = URL.createObjectURL(file);
-    onPhotoSelected({ file, url });
+    const resized = await downscalePhoto(file);
+    const url = URL.createObjectURL(resized);
+    onPhotoSelected({ file: resized, url });
   }, [onPhotoSelected]);
 
   const handleDrop = useCallback((e) => {
@@ -45,9 +70,10 @@ export default function PhotoUpload({ onPhotoSelected, photo }) {
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    const scale = Math.min(1, MAX_PHOTO_SIZE / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
     canvas.toBlob((blob) => {
       const file = new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' });

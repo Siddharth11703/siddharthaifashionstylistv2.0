@@ -39,7 +39,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [showAuth, setShowAuth] = useState(false);
   const [user, setUser] = useState(null);
-  const [savingOutfit, setSavingOutfit] = useState(false); // eslint-disable-line no-unused-vars
+  // Set only when the user asked to save an outfit, so signing in from the header never saves anything.
+  const [pendingSave, setPendingSave] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const canProceedFromPhoto = !!photo;
@@ -82,52 +83,32 @@ export default function App() {
     }
   };
 
+  // Called by OutfitResult when a signed-out user clicks "Save Outfit": remember the intent so the
+  // save happens by itself once sign-in completes.
   const handleSaveOutfit = () => {
-    if (!user) {
-      setShowAuth(true);
-    } else {
-      performSave(user);
-    }
+    setPendingSave(true);
+    setShowAuth(true);
   };
 
-  const performSave = async (currentUser) => {
-    if (!result) return;
-    setSavingOutfit(true);
-    try {
-      const res = await fetch('/api/users/save-outfit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          occasion: preferences.occasion,
-          budget: preferences.budget,
-          height: preferences.height,
-          age: preferences.age,
-          bodyType: preferences.bodyType,
-          skinTone: result.photoAnalysis?.skinTone,
-          outfitDescription: result.outfitRecommendation?.outfitDescription,
-          outfitExplanation: result.outfitRecommendation?.explanation,
-          outfitImageUrl: result.generatedImageUrl,
-          userPhotoPath: result.photoPath,
-        }),
-      });
-
-      const data = await parseApiResponse(res);
-      if (data.success) {
-        setSavedSuccess(true);
-        setTimeout(() => setSavedSuccess(false), 3000);
-      }
-    } catch (err) {
-      console.error('Save error:', err);
-    } finally {
-      setSavingOutfit(false);
-    }
+  const handleOutfitSaved = () => {
+    setPendingSave(false);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   const handleAuthSuccess = (registeredUser) => {
     setUser(registeredUser);
     setShowAuth(false);
-    performSave(registeredUser);
+  };
+
+  const openSignIn = () => {
+    setPendingSave(false);
+    setShowAuth(true);
+  };
+
+  const closeAuth = () => {
+    setPendingSave(false);
+    setShowAuth(false);
   };
 
   const resetApp = () => {
@@ -136,6 +117,7 @@ export default function App() {
     setPreferences({ occasion: '', budget: '', height: '', age: '', bodyType: '' });
     setResult(null);
     setError('');
+    setPendingSave(false);
     setSavedSuccess(false);
   };
   
@@ -170,7 +152,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f0f0f] via-[#1a0a2e] to-[#0f0f0f]">
       {loading && <LoadingScreen />}
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} onSuccess={handleAuthSuccess} />}
+      {showAuth && <AuthModal onClose={closeAuth} onSuccess={handleAuthSuccess} />}
 
       {/* Header */}
       <header className="border-b border-white/8 glass-dark sticky top-0 z-30">
@@ -215,7 +197,7 @@ export default function App() {
               </>
             ) : (
               <button
-                onClick={() => setShowAuth(true)}
+                onClick={openSignIn}
                 className="px-3 py-1.5 rounded-lg border border-white/15 text-white/60 hover:text-white hover:border-purple-400/50 transition-all text-sm"
               >
                 Sign in
@@ -376,6 +358,8 @@ export default function App() {
             <OutfitResult
               result={result}
               onSave={handleSaveOutfit}
+              onSaved={handleOutfitSaved}
+              autoSave={pendingSave}
               user={user}
             />
             <button

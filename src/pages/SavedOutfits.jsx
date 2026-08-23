@@ -121,7 +121,7 @@ export default function SavedOutfits({ user, onBack }) {
                     <img
                       src={outfit.outfit_image_url}
                       alt="Outfit"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
@@ -174,7 +174,8 @@ export default function SavedOutfits({ user, onBack }) {
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelected(null)} />
           <div className="relative w-full max-w-2xl glass-dark rounded-2xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto">
             {selected.outfit_image_url && (
-              <img src={selected.outfit_image_url} alt="Outfit" className="w-full h-72 object-cover" />
+              // object-contain so the whole head-to-shoes frame is visible instead of a zoomed crop
+              <img src={selected.outfit_image_url} alt="Outfit" className="w-full max-h-[65vh] object-contain bg-black/30" />
             )}
             <div className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-4">
