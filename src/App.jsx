@@ -6,7 +6,6 @@ import AuthModal from './components/AuthModal';
 import LoadingScreen from './components/LoadingScreen';
 import SavedOutfits from './pages/SavedOutfits';
 
-
 const parseApiResponse = async (res) => {
   const text = await res.text();
   const contentType = res.headers.get('content-type') || '';
@@ -23,7 +22,6 @@ const parseApiResponse = async (res) => {
     throw new Error('Server response was not valid JSON. Please check deployment logs.');
   }
 };
-
 
 export default function App() {
   const [page, setPage] = useState('home'); // home | saved
@@ -140,6 +138,25 @@ export default function App() {
     setError('');
     setSavedSuccess(false);
   };
+  
+  const handleSignOut = () => {
+    setUser(null);
+    setPage('home');
+  };
+
+  // --- THESE ARE THE SAFETY CHECKS PREVENTING THE BLACK SCREEN ---
+  const getUserDisplayLetter = () => {
+    if (user?.name && typeof user.name === 'string') return user.name.charAt(0).toUpperCase();
+    if (user?.email && typeof user.email === 'string') return user.email.charAt(0).toUpperCase();
+    return 'U';
+  };
+
+  const getUserDisplayName = () => {
+    if (user?.name && typeof user.name === 'string') return user.name.split(' ')[0];
+    if (user?.email && typeof user.email === 'string') return user.email.split('@')[0];
+    return 'User';
+  };
+  // ---------------------------------------------------------------
 
   if (page === 'saved') {
     return (
@@ -183,9 +200,11 @@ export default function App() {
               <>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
-                    {user?.name ? user.name[0].toUpperCase() : ''}
+                    {getUserDisplayLetter()}
                   </div>
-                  <span className="text-purple-300 text-sm font-medium hidden sm:block">{user?.name ? user.name.split(' ')[0] : ''}</span>
+                  <span className="text-purple-300 text-sm font-medium hidden sm:block">
+                    {getUserDisplayName()}
+                  </span>
                 </div>
                 <button
                   onClick={handleSignOut}
