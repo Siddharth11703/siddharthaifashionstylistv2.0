@@ -8,18 +8,18 @@ export default function PhotoUpload({ onPhotoSelected, photo }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const handleFile = (file) => {
+  const handleFile = useCallback((file) => {
     if (!file || !file.type.startsWith('image/')) return;
     const url = URL.createObjectURL(file);
     onPhotoSelected({ file, url });
-  };
+  }, [onPhotoSelected]);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     handleFile(file);
-  }, []);
+  }, [handleFile]);
 
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = () => setIsDragging(false);
@@ -35,7 +35,7 @@ export default function PhotoUpload({ onPhotoSelected, photo }) {
           videoRef.current.play();
         }
       }, 100);
-    } catch (err) {
+    } catch {
       alert('Camera access denied. Please allow camera access and try again.');
     }
   };

@@ -39,7 +39,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [showAuth, setShowAuth] = useState(false);
   const [user, setUser] = useState(null);
-  const [savingOutfit, setSavingOutfit] = useState(false);
+  const [savingOutfit, setSavingOutfit] = useState(false); // eslint-disable-line no-unused-vars
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const canProceedFromPhoto = !!photo;
@@ -64,7 +64,7 @@ export default function App() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         body: formData,
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(120000),
       });
 
       const data = await parseApiResponse(res);
@@ -73,7 +73,7 @@ export default function App() {
         throw new Error(data.error || 'Analysis failed');
       }
 
-      setResult({ ...data, photoFile: photo.file });
+      setResult({ ...data, ...preferences, photoFile: photo.file });
       setStep(2);
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');

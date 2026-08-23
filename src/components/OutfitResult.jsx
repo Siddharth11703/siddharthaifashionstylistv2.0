@@ -14,12 +14,14 @@ const asList = (value) => {
 export default function OutfitResult({ result, onSave, user }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [fallbackTried, setFallbackTried] = useState(false);
   const [activeTab, setActiveTab] = useState('outfit');
 
   // New states to handle the Save/Unsave toggle
   const [isSaved, setIsSaved] = useState(false);
   const [savedOutfitId, setSavedOutfitId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const { photoAnalysis, outfitRecommendation = {}, generatedImageUrl } = result;
   const colorPalette = asList(outfitRecommendation.colorPalette);
@@ -30,10 +32,11 @@ export default function OutfitResult({ result, onSave, user }) {
   // 1. Function to SAVE the outfit
   const handleSaveOutfitClick = async () => {
     if (!user) {
-      alert("Please sign in to save your outfit!");
+      onSave?.();
       return;
     }
 
+    setSaveError('');
     setIsProcessing(true);
     try {
       const res = await fetch('/api/users/save-outfit', {
@@ -41,6 +44,11 @@ export default function OutfitResult({ result, onSave, user }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
+          occasion: result.occasion,
+          budget: result.budget,
+          height: result.height,
+          age: result.age,
+          bodyType: result.bodyType,
           skinTone: photoAnalysis?.skinTone,
           outfitDescription: outfitRecommendation?.outfitDescription,
           outfitExplanation: outfitRecommendation?.explanation,
@@ -57,10 +65,10 @@ export default function OutfitResult({ result, onSave, user }) {
           setSavedOutfitId(data.outfitId || data.id);
         }
       } else {
-        alert("Failed to save outfit.");
+        setSaveError('Failed to save outfit. Please try again.');
       }
-    } catch (error) {
-      alert("Error saving outfit. Please try again.");
+    } catch {
+      setSaveError('Error saving outfit. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -89,19 +97,22 @@ export default function OutfitResult({ result, onSave, user }) {
         // Fallback just in case the ID wasn't captured
         setIsSaved(false);
       }
-    } catch (error) {
-      alert("Error removing outfit.");
+    } catch {
+      setSaveError('Error removing outfit. Please try again.');
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleImageError = (e) => {
-    if (e?.target) e.target.onerror = null;
+    if (fallbackTried) {
+      setImageError(true);
+      return;
+    }
+    // Retry once through the server-side proxy before giving up on the image.
+    setFallbackTried(true);
     const fallbackPrompt = encodeURIComponent(outfitRecommendation.imagePrompt || outfitRecommendation.outfitDescription || 'professional fashion outfit portrait');
-    const fallbackUrl = `/api/proxy-image?prompt=${fallbackPrompt}&width=768&height=1024`;
-    e.target.src = fallbackUrl;
-    setImageError(true);
+    if (e?.target) e.target.src = `/api/proxy-image?prompt=${fallbackPrompt}&width=768&height=1024`;
   };
 
   return (
@@ -212,7 +223,7 @@ export default function OutfitResult({ result, onSave, user }) {
               <h3>Why it works for you</h3>
               <p className="why-text">
                  {outfitRecommendation.explanation?.includes('{"outfitName"')
-                  ? outfitRecommendation.outfitDescription.match(/"explanation"\s*:\s*"([^"]+)"/)?.[1] || "Designed based on your profile inputs."
+                  ? outfitRecommendation.explanation.match(/"explanation"\s*:\s*"([^"]+)"/)?.[1] || "Designed based on your profile inputs."
                   : outfitRecommendation.explanation}
               </p>
             </div>
@@ -232,6 +243,10 @@ export default function OutfitResult({ result, onSave, user }) {
           </div>
         )}
         
+        {saveError && (
+          <p className="text-red-400 text-sm text-center">{saveError}</p>
+        )}
+
         {/* --- DYNAMIC SAVE / UNSAVE BUTTON --- */}
         {isSaved ? (
           <button 

@@ -20,7 +20,7 @@ router.get('/proxy-image', async (req, res) => {
     let rawPrompt = prompt;
     try {
       rawPrompt = decodeURIComponent(prompt);
-    } catch (e) {
+    } catch {
       // ignore decode errors and fall back to the original prompt
       rawPrompt = prompt;
     }
