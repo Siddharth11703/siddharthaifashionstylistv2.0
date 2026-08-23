@@ -107,5 +107,33 @@ router.delete('/outfits/:outfitId', (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// Delete outfit endpoint
+router.delete('/delete-outfit/:outfitId', async (req, res) => {
+  try {
+    const { outfitId } = req.params;
+    const { userId } = req.body;
+
+    if (!outfitId || !userId) {
+      return res.status(400).json({ error: 'Missing outfitId or userId' });
+    }
+
+    // Optional: Check if the outfit belongs to the user before deleting
+    const outfit = db.prepare('SELECT * FROM saved_outfits WHERE id = ? AND user_id = ?').get(outfitId, userId);
+    
+    if (!outfit) {
+        return res.status(404).json({ error: 'Outfit not found or unauthorized' });
+    }
+
+    db.prepare('DELETE FROM saved_outfits WHERE id = ? AND user_id = ?').run(outfitId, userId);
+
+    res.json({
+      success: true,
+      message: 'Outfit deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting outfit:', error);
+    res.status(500).json({ error: 'Failed to delete outfit' });
+  }
+});
 
 export default router;
