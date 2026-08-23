@@ -1,6 +1,5 @@
 import https from 'https';
 import multer from 'multer';
-import { v4 as uuidv4 } from 'uuid';
 import { Groq } from 'groq-sdk';
 import db from '../db.js';
 import express from 'express';
@@ -180,9 +179,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
 // Outfit history endpoint
 router.get('/outfits', async (req, res) => {
   try {
-    const outfits = db
-      .prepare('SELECT * FROM saved_outfits ORDER BY created_at DESC')
-      .all();
+    const outfits = await db.getAllSavedOutfits();
     res.json(outfits);
   } catch (error) {
     console.error('Error fetching outfits:', error);
@@ -199,16 +196,16 @@ router.post('/save-outfit', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const outfitId = uuidv4();
-    const createdAt = new Date().toISOString();
-
-    db.prepare(
-      'INSERT INTO saved_outfits (id, user_id, outfit_name, recommendation, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(outfitId, userId, outfitName, JSON.stringify(recommendation), imageUrl, createdAt);
+    const outfit = await db.createSavedOutfit({
+      user_id: userId,
+      outfit_name: outfitName,
+      recommendation,
+      image_url: imageUrl,
+    });
 
     res.json({
       success: true,
-      outfitId,
+      outfitId: outfit.id,
       message: 'Outfit saved successfully',
     });
   } catch (error) {

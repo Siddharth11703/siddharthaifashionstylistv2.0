@@ -13,8 +13,10 @@ This project supports hosting on Vercel with API routes and frontend in the same
 In Vercel project settings, open **Environment Variables** and add:
 
 - `GROQ_API_KEY` = your Groq API key
+- `SUPABASE_URL` = your Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` = your Supabase service role key
 
-Then redeploy.
+Before redeploying, run `server/schema.sql` in your Supabase project's SQL editor. Then redeploy.
 
 ## 3) Add your custom domain
 1. In Vercel project dashboard → **Settings** → **Domains**.
@@ -29,10 +31,11 @@ Vercel automatically issues free HTTPS certificates after DNS verification.
 
 ## 5) Common issue checks
 If `/api/analyze` fails:
-- Confirm `GROQ_API_KEY` is set in Vercel and redeployed.
+- Confirm `GROQ_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` are set in Vercel and redeployed.
 - Check Vercel Functions logs for runtime errors.
 - Ensure uploaded images are under 10MB.
 
 ## Notes
 - This repo already includes `vercel.json` routing `/api/*` to the serverless function.
+- Outfit/user data is stored in Supabase.
 - On Vercel, uploads are stored in `/tmp/uploads` during request execution.
