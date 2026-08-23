@@ -90,19 +90,6 @@ function stripAIThinking(text = '') {
   return String(text).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
-// Generate image using Pollinations AI via backend proxy
-async function generateImageWithPollinations(prompt, seed) {
-  let simplifiedPrompt = prompt;
-  
-  // REMOVED the 500 character truncation block here so the full outfit details reach the AI
-  
-  const seedParam = seed ? `&seed=${seed}` : '';
-  
-  // CHANGED enhance=true to enhance=false so Pollinations doesn't override our strict framing
-  const imageUrl = `/api/proxy-image?prompt=${encodeURIComponent(simplifiedPrompt)}&width=832&height=1216&model=flux&nologo=true&enhance=false${seedParam}`;
-  return imageUrl;
-}
-
 // Main analysis endpoint
 router.post('/analyze', upload.single('photo'), async (req, res) => {
   try {
@@ -259,48 +246,69 @@ Return ONLY valid JSON, no markdown fences, no commentary, with exactly these ke
    // Step 3: Generate image prompt for outfit visualization
     const outfitVisual = outfitRecommendation.outfitVisualDescription || outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit';
 
-    // --- 1. SAFE VARIABLE DEFINITIONS ---
-    // This creates the variables safely, pulling from your existing 'preferences' so the app never crashes
-    const safeUploadedUrl = typeof uploadedUrl !== 'undefined' ? uploadedUrl : '';
-    const appearanceDesc = `A ${preferences?.height || 'average height'} ${preferences?.age || 'adult'} with a ${preferences?.bodyType || 'average'} build`;
-    const occasionLabel = preferences?.occasion || 'fashionable event';
-    const occasionSpecificity = 'stylish and appropriate';
-    const ethnicAppearance = typeof photoAnalysis !== 'undefined' && photoAnalysis.ethnicAppearance ? photoAnalysis.ethnicAppearance : 'fashion model';
-    const outfitDesc = outfitRecommendation?.outfitDescription || outfitRecommendation?.outfitName || 'a highly detailed stylish outfit';
-    const outfitImgPrompt = outfitRecommendation?.imagePrompt || outfitRecommendation?.outfitVisualDescription || '';
+    // --- VARIABLE DEFINITIONS ---
+    // Map the vision model's gender label to natural image-prompt language.
+    const genderNoun = { male: 'man', female: 'woman' }[String(visionFacts.gender).toLowerCase()] || 'person';
 
-    // --- 2. UPDATED PROMPT FOR FULL BODY ---
-    // Added "Extreme long shot" and "feet visible in frame" at the very beginning where the AI pays the most attention.
+    // Prefer the body type the user explicitly selected (they know their own body);
+    // fall back to the AI's photo-based estimate only if they didn't provide one.
+    const bodyTypeFinal = preferences?.bodyType || visionFacts.bodyType || 'average';
+
+    const hairDesc = [visionFacts.hairColor, visionFacts.hairType].filter(Boolean).join(' ').trim();
+    const featuresDesc = visionFacts.styleFeatures && visionFacts.styleFeatures.toLowerCase() !== 'none'
+      ? `, ${visionFacts.styleFeatures}`
+      : '';
+    const heightPart = preferences?.height ? `${preferences.height}, ` : '';
+    const agePart = preferences?.age ? `${preferences.age}-year-old ` : '';
+
+    // Small grammar helper — faceShape/bodyType values (e.g. "oval", "athletic") can start
+    // with a vowel sound, so a hardcoded "a" would read as "a oval face" for the schema's
+    // own default values.
+    const withArticle = (word) => (/^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`);
+
+    // *** This is the line that actually carries the Step 1 vision analysis into the
+    // image — skin tone, hair, face shape and body type were being thrown away after
+    // Step 2 before this fix, so the image had no real link to the analyzed photo. ***
+    const personDescription = `a photorealistic ${heightPart}${agePart}${genderNoun} with ${visionFacts.skinTone} skin tone, ${hairDesc || 'neatly styled hair'}, ${withArticle(visionFacts.faceShape)} face shape, and ${withArticle(bodyTypeFinal)} body type${featuresDesc}`;
+
+    const occasionLabel = preferences?.occasion || 'a fashionable event';
+
+    // Use ONLY outfitVisual (declared above) — it's the field Step 2 explicitly generates
+    // "suitable for an image generator". Previously this got duplicated with
+    // outfitDescription (meant for on-screen display, not the image model) as a separate
+    // line in the same prompt, which repeated the outfit and diluted the description.
+    // Capped defensively in case the LLM ignores the "one dense sentence" instruction.
+    const outfitVisualForImage = outfitVisual.slice(0, 600);
+
+    // --- FULL-BODY, VISION-GROUNDED PROMPT ---
+    // Removed the old "REFERENCE_IMAGE: <url>" / "STRICT INSTRUCTIONS: use the face in
+    // REFERENCE_IMAGE exactly" lines — `uploadedUrl` was never defined anywhere in this
+    // file (it always evaluated to an empty string), and even with a real URL, this plain
+    // flux text-to-image endpoint has no way to use a reference photo — that text was just
+    // being fed to the model as literal, unfulfillable content. See chat for how to add
+    // real photo-grounded generation via Pollinations' `kontext` model if you want that.
     const imagePromptArray = [
-      `Extreme long shot, standing far back, full body visible from head to toe, feet and shoes clearly visible in frame`,
-      `REFERENCE_IMAGE: ${safeUploadedUrl}`, 
-      `Photorealistic full body fashion photography of ${appearanceDesc}`,
-      `standing upright in a confident natural pose, feet flat on ground`,
-      `MANDATORY OCCASION: ${occasionLabel}; dress code must be ${occasionSpecificity}`,
-      `wearing this exact elaborative outfit: ${outfitDesc}`,
-      `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch`,
-      `image detail prompt: ${outfitImgPrompt}`,
-      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly. Full body must be visible from head to toes; do NOT crop the head, torso, legs or feet.`,
-      `the outfit must visually communicate ${occasionLabel} immediately`,
-      `complete outfit visible from head to toe including shoes`,
-      `shoes clearly detailed — leather texture, sole, laces or straps fully visible`,
-      `entire body in frame: head, torso, arms, legs, feet — nothing cropped`,
-      `clean white seamless studio background, professional fashion editorial lighting, sharp crisp details throughout`,
-      `ultra high resolution 4K, magazine cover quality, photorealistic skin and fabric textures`,
-      `the model looks like a real ${ethnicAppearance} person`,
-      `camera angle: straight on, full-length shot, neutral expression`
+      `Full-body fashion photograph, extreme long shot, entire figure visible from head to toe including feet and shoes, nothing cropped`,
+      `${personDescription}, standing upright in a natural confident pose, feet flat on the ground, camera straight-on at full-body distance`,
+      `wearing ${outfitVisualForImage}`,
+      `styling clearly reads as ${occasionLabel} attire`,
+      `visible accessories included as described: jewelry, watch, and bag or clutch`,
+      `shoes fully visible with clear texture detail — leather grain, laces, or straps`,
+      `clean seamless white studio background, professional editorial fashion lighting, sharp focus throughout`,
+      `ultra-detailed, photorealistic skin and fabric textures, high resolution`,
     ];
 
-    // This combines all your prompt lines into one long comma-separated sentence
+    // This combines all the prompt lines into one comma-separated description
     const imagePromptText = imagePromptArray.join(", ");
 
     // Ensure the prompt is URL encoded
     const encodedPrompt = encodeURIComponent(imagePromptText);
 
-    // Pollinations AI documentation recommends passing specific query parameters for portrait aspect ratio and quality.
-    // &width=768&height=1024 forces a vertical portrait, &nologo=true removes the watermark, &enhance=false prevents Pollinations from overwriting our prompt.
-    const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=1024&nologo=true&enhance=false`;
-console.log('🎨 Image generation initiated'); 
+    // width/height give a vertical portrait suited to full-body shots. model=flux is now
+    // explicit (it was already Pollinations' default, but explicit beats implicit in case
+    // that default ever changes). enhance=false stops Pollinations from rewriting our prompt.
+    const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=1024&model=flux&nologo=true&enhance=false`;
+    console.log('🎨 Image generation initiated');
 
     res.json({
       success: true,
