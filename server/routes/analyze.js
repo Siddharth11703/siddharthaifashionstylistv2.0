@@ -1,146 +1,189 @@
-import multer from 'multer';
-import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
 import express from 'express';
-// Helper function to clean and parse the vision AI output
-// Helper function to clean and parse the vision AI output
-const parseVisionAnalysis = (rawText) => {
-  // Safe defaults in case the AI fails to generate specific keys
-  const defaultFacts = { 
-    gender: 'person', 
-    skinTone: 'average', 
-    hairColor: '', 
-    hairType: '', 
-    faceShape: 'oval', 
-    bodyType: 'average', 
-    styleFeatures: '' 
-  };
-  
-  if (!rawText) return defaultFacts;
-  
-  try {
-    // Remove markdown code blocks and parse into a real JSON object
-    const cleanedText = rawText.replace(/```[a-zA-Z]*\n/g, '').replace(/```/g, '').trim();
-    const parsedData = JSON.parse(cleanedText);
-    
-    // Merge the AI's data with our defaults to guarantee no 'undefined' values
-    return { ...defaultFacts, ...parsedData };
-  } catch (error) {
-    console.error("Error parsing vision analysis:", error);
-    return defaultFacts;
-  }
-};
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import Groq from 'groq-sdk';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
-// Helper function to safely extract and parse JSON from the LLM output
-const extractJson = (text) => {
-  if (!text) return null;
-  try {
-    // Find the first '{' and the last '}' to strip out any conversational filler
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1) return null;
-    
-    const jsonString = text.substring(start, end + 1);
-    return JSON.parse(jsonString);
-  } catch (error) {
-    console.error("Error extracting JSON:", error);
-    return null;
+
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
+const GROQ_TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile';
+
+const getUploadDir = () => {
+  if (process.env.VERCEL === '1') {
+    return '/tmp/uploads';
   }
+  return path.join(__dirname, '../../uploads');
 };
 
-const upload = multer({ storage: multer.memoryStorage() });
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = getUploadDir();
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `photo_${Date.now()}${ext}`);
+  },
+});
 
-const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Log whether key present (temporary debug)
-console.log('GROQ_API_KEY present:', !!process.env.GROQ_API_KEY);
+function getFallbackPhotoAnalysis() {
+  return {
+    skinTone: 'medium',
+    gender: 'neutral',
+    hairDescription: 'dark hair',
+    faceDescription: 'neutral facial features',
+    ethnicAppearance: 'South Asian',
+    appearanceDescription: 'stylish individual',
+    styleFeatures: 'casual style',
+  };
+}
 
-async function createGroqChatCompletion(payload) {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY is not configured');
-  }
+function parsePhotoAnalysis(rawText) {
+  const jsonMatch = rawText?.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return getFallbackPhotoAnalysis();
+  return JSON.parse(jsonMatch[0]);
+}
 
-  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
+// Build a hyper-specific appearance prompt so the model matches the user
+function buildAppearanceDescriptor(photoAnalysis, height, bodyType, age) {
+  const { skinTone, gender, hairDescription, faceDescription, appearanceDescription } = photoAnalysis;
+
+  const genderMap = {
+    male: 'man',
+    female: 'woman',
+    neutral: 'person',
+  };
+  const genderWord = genderMap[gender?.toLowerCase()] || 'person';
+
+  const heightMap = {
+    short: 'short-statured',
+    medium: 'average-height',
+    tall: 'tall',
+  };
+  const heightWord = heightMap[height] || 'average-height';
+
+  const bodyMap = {
+    slim: 'slim, lean body',
+    athletic: 'athletic, muscular build',
+    average: 'average build',
+    plus: 'plus-size, fuller figure',
+    pear: 'pear-shaped body with wider hips',
+    hourglass: 'hourglass figure with defined waist',
+  };
+  const bodyDesc = bodyMap[bodyType] || 'average build';
+
+  const ageMap = {
+    teen: '16 years old',
+    young_adult: '25 years old',
+    adult: '38 years old',
+    middle_age: '52 years old',
+    senior: '65 years old',
+  };
+  const ageDesc = ageMap[age] || '30 years old';
+
+  return `a real-looking ${ageDesc} ${heightWord} ${genderWord} with ${skinTone} skin tone, ${bodyDesc}${hairDescription ? `, ${hairDescription}` : ''}${faceDescription ? `, ${faceDescription}` : ''}${appearanceDescription ? `, ${appearanceDescription}` : ''}`;
+}
+
+function normalizePreference(value) {
+  return String(value || '').trim();
+}
+
+function buildOccasionGuidance(occasion) {
+  const normalizedOccasion = normalizePreference(occasion);
+  const key = normalizedOccasion.toLowerCase();
+
+  const rules = [
+    {
+      matches: ['wedding', 'marriage', 'bridal', 'bride', 'groom', 'sangeet', 'mehendi', 'reception', 'haldi'],
+      guidance: 'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, office or gymwear',
     },
-    body: JSON.stringify(payload),
+    {
+      matches: ['party', 'club', 'birthday', 'celebration'],
+      guidance: 'party-ready statement outfit with elevated fabrics, stylish evening details, confident accessories, and event-appropriate shoes; avoid basic daytime casual wear',
+    },
+    {
+      matches: ['interview', 'office', 'business', 'corporate', 'meeting', 'work'],
+      guidance: 'professional polished business attire with structured pieces, modest fit, refined shoes, and minimal accessories; avoid partywear, loungewear, and overly casual items',
+    },
+    {
+      matches: ['date', 'dinner', 'romantic'],
+      guidance: 'smart romantic dinner/date attire, flattering elevated pieces, tasteful accessories, and polished footwear; avoid gymwear and basic everyday clothing',
+    },
+    {
+      matches: ['gym', 'workout', 'fitness', 'sport'],
+      guidance: 'performance athletic outfit with breathable technical fabrics, supportive trainers, and sport-ready layering; avoid formalwear and delicate accessories',
+    },
+    {
+      matches: ['festival', 'festive', 'diwali', 'eid', 'christmas', 'puja'],
+      guidance: 'festive celebratory attire with rich colors, dressy details, culturally appropriate elements, accessories, and polished footwear; avoid plain casual clothing',
+    },
+  ];
+
+  const matchedRule = rules.find((rule) => rule.matches.some((term) => key.includes(term)));
+  const specificity = matchedRule ? matchedRule.guidance : `clearly ${normalizedOccasion || 'the requested occasion'}-appropriate styling with no generic casual outfit unless the occasion itself is casual`;
+
+  return {
+    label: normalizedOccasion || 'the requested occasion',
+    specificity,
+  };
+}
+
+// Generate image using Pollinations AI (returns url + srcset)
+async function generateImageWithPollinations(prompt, seed) {
+  const encodedPrompt = encodeURIComponent(prompt);
+  const seedParam = seed ? `&seed=${seed}` : '';
+
+  // Request multiple sizes and return a srcset so the browser can pick the right density
+  const widths = [768, 1536, 2048, 3072]; // include larger widths for high-DPI
+  const srcParts = widths.map((w) => {
+    const h = Math.round((w * 4) / 3); // keep 3:4 aspect ratio (width:height)
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=true${seedParam} ${w}w`;
   });
 
-  const responseText = await response.text();
-  let responseBody;
+  const defaultWidth = 1536;
+  const defaultHeight = Math.round((defaultWidth * 4) / 3);
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=true${seedParam}`;
 
-  try {
-    responseBody = responseText ? JSON.parse(responseText) : {};
-  } catch {
-    throw new Error(`Groq returned a non-JSON response (${response.status}): ${responseText}`);
-  }
-
-  if (!response.ok) {
-    const message = responseBody.error?.message || responseBody.message || responseText || 'Unknown Groq API error';
-    throw new Error(`Groq API ${response.status}: ${message}`);
-  }
-
-  return responseBody;
+  return {
+    url: defaultUrl,
+    srcset: srcParts.join(', '),
+  };
 }
 
-function stripAIThinking(text = '') {
-  return String(text).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-}
-
-// Generate image using Pollinations AI via backend proxy
-async function generateImageWithPollinations(prompt, seed) {
-  let simplifiedPrompt = prompt;
-  
-  // REMOVED the 500 character truncation block here so the full outfit details reach the AI
-  
-  const seedParam = seed ? `&seed=${seed}` : '';
-  
-  // CHANGED enhance=true to enhance=false so Pollinations doesn't override our strict framing
-  const imageUrl = `/api/proxy-image?prompt=${encodeURIComponent(simplifiedPrompt)}&width=832&height=1216&model=flux&nologo=true&enhance=false${seedParam}`;
-  return imageUrl;
-}
-
-// Main analysis endpoint
 router.post('/analyze', upload.single('photo'), async (req, res) => {
+  req.setTimeout(60000);
+  res.setTimeout(60000);
+
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ error: 'GROQ_API_KEY is not configured' });
-    }
+    const { occasion, budget, height, age, bodyType } = req.body;
+    const occasionGuidance = buildOccasionGuidance(occasion);
 
     if (!req.file) {
-      return res.status(400).json({ error: 'No photo provided' });
+      return res.status(400).json({ error: 'No photo uploaded' });
     }
 
-    const preferences = req.body.preferences
-      ? JSON.parse(req.body.preferences)
-      : {
-          occasion: req.body.occasion,
-          budget: req.body.budget,
-          height: req.body.height,
-          age: req.body.age,
-          bodyType: req.body.bodyType,
-        };
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    if (!Object.values(preferences).some(Boolean)) {
-      return res.status(400).json({ error: 'No preferences provided' });
-    }
+    const photoPath = req.file.path;
+    const photoData = fs.readFileSync(photoPath);
+    const base64Photo = photoData.toString('base64');
+    const mimeType = req.file.mimetype;
 
-    // Convert image to base64
-    const base64Image = req.file.buffer.toString('base64');
-    const imageMediaType = req.file.mimetype;
+    // Build publicly-accessible URL to uploaded file so generation service can use it as a reference.
+    // Note: in production behind a different host you may need to build the absolute URL differently.
+    const uploadedUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
-    console.log('🔍 Analyzing photo...');
-    console.log('📋 Preferences:', preferences);
-
-    // Step 1: Analyze photo using Groq with Vision
-    let analysisResponse;
+    // Step 1: Deep photo analysis — extract appearance details to replicate the person.
+    let photoAnalysis = getFallbackPhotoAnalysis();
     try {
-      analysisResponse = await createGroqChatCompletion({
-        model: 'qwen/qwen3.6-27b',
-        max_completion_tokens: 1024,
+      const visionResponse = await groq.chat.completions.create({
+        model: GROQ_VISION_MODEL,
         messages: [
           {
             role: 'user',
@@ -148,212 +191,151 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:${imageMediaType};base64,${base64Image}`,
+                  url: `data:${mimeType};base64,${base64Photo}`,
                 },
               },
               {
-                  type: 'text',
-                  text: `Analyze this photo for fashion styling. Return ONLY valid JSON (no markdown fences, no commentary) with exactly these keys:
+                type: 'text',
+                text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS specific person. Provide:
+
+1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige")
+2. gender: male/female/neutral
+3. hairDescription: hair color, length, texture (e.g., "short black curly hair", "long straight brown hair")
+4. faceDescription: key facial features (e.g., "round face with brown eyes", "sharp jawline with dark eyes", "high cheekbones")
+5. ethnicAppearance: apparent ethnic appearance for realistic generation (e.g., "South Asian", "East Asian", "Black", "Hispanic", "Middle Eastern", "White/Caucasian", "Mixed")
+6. appearanceDescription: 1-sentence holistic description
+7. styleFeatures: any current style elements visible
+
+Respond ONLY in valid JSON:
 {
-  "gender": "Male | Female | Other",
-  "skinTone": "e.g. fair, medium, dark, olive",
-  "hairType": "e.g. straight, wavy, curly, short, bald",
-  "hairColor": "e.g. black, brown, blonde, gray",
-  "bodyType": "from clothing fit, e.g. petite, average, athletic, plus-size",
-  "faceShape": "e.g. round, oval, square, oblong",
-  "styleFeatures": "notable visible details e.g. glasses, beard, tattoos, accessories, or empty string if none"
-}
-Be concise and factual. Estimate gender only from visual presentation for styling purposes.`,
-                },
+  "skinTone": "",
+  "gender": "",
+  "hairDescription": "",
+  "faceDescription": "",
+  "ethnicAppearance": "",
+  "appearanceDescription": "",
+  "styleFeatures": ""
+}`,
+              },
             ],
           },
         ],
+        max_tokens: 600,
       });
-    } catch (err) {
-      console.error('Groq vision API error:', err);
-      return res.status(502).json({ error: 'Vision provider error', details: err.message || String(err) });
+
+      photoAnalysis = parsePhotoAnalysis(visionResponse.choices[0].message.content);
+    } catch (visionError) {
+      console.warn(`Vision analysis failed with model ${GROQ_VISION_MODEL}:`, visionError.message);
     }
 
-    const photoAnalysis = stripAIThinking(analysisResponse.choices?.[0]?.message?.content || '');
-    // Structured, trustworthy facts used internally for prompt-building —
-    // keeps `photoAnalysis` itself unchanged (raw string) for API compatibility.
-    const visionFacts = parseVisionAnalysis(photoAnalysis);
-    console.log('✅ Photo analysis complete');
+    // Step 2: Generate outfit recommendation text with persona-aware styling
+    const textResponse = await groq.chat.completions.create({
+      model: GROQ_TEXT_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are Siddharth, a top professional fashion stylist. You create hyper-personalized outfit recommendations. The requested occasion is mandatory: never return a generic outfit when a formal, festive, wedding, business, party, date, athletic, or other specific occasion is provided. Always factor in the person\'s exact ethnic appearance, skin tone, and physical features when choosing colors and styles.',
+        },
+        {
+          role: 'user',
+          content: `Create a detailed outfit recommendation for a person with the following profile:
 
-   // Step 2: Generate outfit recommendation based on analysis and preferences
-const preferencesText = Object.entries(preferences)
-  .map(([key, value]) => `${key}: ${value}`)
-  .join(', ');
+Photo Analysis:
+- Skin Tone: ${photoAnalysis.skinTone}
+- Gender: ${photoAnalysis.gender}
+- Ethnic Appearance: ${photoAnalysis.ethnicAppearance}
+- Hair: ${photoAnalysis.hairDescription}
+- Face: ${photoAnalysis.faceDescription}
+- Appearance: ${photoAnalysis.appearanceDescription}
 
-const outfitPrompt = `Person profile (for tailoring the outfit only — do NOT restate or re-describe the person in your output):
-- Gender: ${visionFacts.gender}
-- Skin tone: ${visionFacts.skinTone}
-- Hair: ${visionFacts.hairColor} ${visionFacts.hairType}
-- Body type: ${visionFacts.bodyType}
-- Face shape: ${visionFacts.faceShape}
-- Notable features: ${visionFacts.styleFeatures || 'none'}
- 
-Style preferences: ${preferencesText}
- 
-Create ONE modern, currently-trending, realistic outfit recommendation for this person's occasion and budget. Requirements:
-1. TREND-DRIVEN: Reference real current fashion movements relevant to the occasion (e.g., quiet luxury, elevated streetwear, smart casual, old money aesthetic, minimalist tailoring) — not generic or dated combinations.
-2. CLASSY, NEVER VULGAR: The outfit must be tasteful, well-covered, and appropriate for the stated occasion. No overly revealing, suggestive, or provocative pieces under any circumstances, regardless of body type or gender.
-3. BUDGET-ACCURATE: Strictly match the stated budget level — no extravagant/luxury pieces for a tight budget, no cheap-looking pieces for a luxury budget.
-4. FLATTERING: Choose silhouettes, fabrics, and colors that suit the stated body type, skin tone, and face shape.
-5. Do NOT include any physical description of the person (no skin tone, hair, face, gender wording) anywhere in your output — only describe the clothing, fabrics, colors, fit, and accessories.
- 
-Return ONLY valid JSON, no markdown fences, no commentary, with exactly these keys:
+Preferences:
+- Occasion: ${occasionGuidance.label}
+- Mandatory Occasion Dress Code: ${occasionGuidance.specificity}
+- Budget: ${budget}
+- Height: ${height}
+- Age Group: ${age}
+- Body Type: ${bodyType}
+
+Provide:
+1. A complete, elaborative outfit breakdown that is specific to the occasion and budget.
+2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory/headwear, scarf/dupatta/tie/pocket square when relevant, and any culturally appropriate occasion pieces.
+3. For each item, include color, fabric/material, texture/finish, fit/silhouette, and small design details.
+4. Why this outfit suits their appearance, body type, skin tone, ethnic appearance, and the exact occasion dress code.
+5. Styling tips personalized to their look.
+
+Respond in JSON:
 {
-  "outfitName": "catchy professional title",
-  "outfitDescription": "2-3 concise sentences describing the complete outfit from top to shoes/accessories",
-  "explanation": "2-3 concise sentences explaining why it fits the occasion, budget, height, age, and body type",
-  "colorPalette": ["3-4 color names"],
-  "keyPieces": ["5-7 specific garments/accessories"],
-  "stylingTips": ["3-5 concise styling tips"],
-  "occasions": ["2-4 suitable occasions"],
-  "outfitVisualDescription": "one dense sentence describing ONLY the garments/fabrics/colors/fit/accessories in rich visual detail, suitable for an image generator — no mention of the person wearing them"
-}`;
+  "outfitName": "Short catchy name",
+  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/materials, texture/finish, fit, shoes, and occasion-specific details. Do not be brief.",
+  "colorPalette": "Detailed 3-5 sentence explanation of the colors and why they suit this person's specific skin tone and the occasion",
+  "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",
+  "stylingTips": "3-5 personalized styling tips, including how to place or pair accessories",
+  "imagePrompt": "Detailed image generation prompt describing the COMPLETE outfit head to toe and explicitly naming the occasion as ${occasionGuidance.label}. Include every visible attire item and accessory from outfitDescription: primary garment, inner/outer layers, bottoms, shoes, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpack, hair accessory/headwear, scarf/dupatta/tie/pocket square when relevant, and culturally appropriate occasion pieces. Include fabric textures, colors, fit details, and a phrase that says this is not casual everyday clothing unless the requested occasion is casual. You MAY include a short face/skin/hair descriptor that will help match the uploaded REFERENCE_IMAGE when generating. Do NOT include identity metadata or personal names."
+}`,
+        },
+      ],
+      max_tokens: 1800,
+    });
 
-    let outfitResponse;
+    let outfitRecommendation;
     try {
-      outfitResponse = await createGroqChatCompletion({
-        model: 'openai/gpt-oss-120b',
-        max_completion_tokens: 2048,
-        messages: [
-          {
-            role: 'user',
-            content: outfitPrompt,
-          },
-        ],
-      });
-    } catch (err) {
-      console.error('Groq outfit API error:', err);
-      return res.status(502).json({ error: 'Outfit provider error', details: err.message || String(err) });
+      const rawText = textResponse.choices[0].message.content;
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      outfitRecommendation = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch {
+      outfitRecommendation = null;
     }
 
-    const outfitText = stripAIThinking(outfitResponse.choices?.[0]?.message?.content || '');
-
-    // Parse outfit recommendation
-    let outfitRecommendation = {};
-    const parsedOutfit = extractJson(outfitText);
-    if (parsedOutfit) {
-      outfitRecommendation = parsedOutfit;
-    } else {
-      // Fallback still gets a usable, occasion-appropriate description
-      // instead of a raw truncated dump — quality degrades gracefully.
-      console.warn('⚠️ Could not parse outfit JSON, using fallback. Raw text:', outfitText.slice(0, 300));
-      outfitRecommendation = {
-        outfitName: 'Personalized Outfit',
-        outfitDescription: outfitText,
-        explanation: 'This recommendation is based on your uploaded photo and selected preferences.',
-        colorPalette: ['Navy', 'White', 'Gold'],
-        keyPieces: outfitText.split('\n').filter(Boolean).slice(0, 7),
-        stylingTips: ['Keep the fit balanced and comfortable.', 'Match accessories to the main color palette.'],
-        occasions: [preferences.occasion || 'Selected occasion', 'Smart casual settings'],
-        outfitVisualDescription: outfitText.replace(/\{|\}/g, '').slice(0, 400),
-      };
+    if (!outfitRecommendation) {
+      return res.status(500).json({ error: 'Failed to generate outfit recommendation' });
     }
 
-    console.log('✅ Outfit recommendation generated');
+    // Step 3: Build a person-matching image prompt for Pollinations AI
+    const appearanceDesc = buildAppearanceDescriptor(photoAnalysis, height, bodyType, age);
 
-   // Step 3: Generate image prompt for outfit visualization
-    const outfitVisual = outfitRecommendation.outfitVisualDescription || outfitRecommendation.outfitDescription || outfitRecommendation.outfitName || 'a stylish outfit';
-
-    // --- 1. SAFE VARIABLE DEFINITIONS ---
-    // This creates the variables safely, pulling from your existing 'preferences' so the app never crashes
-    const safeUploadedUrl = typeof uploadedUrl !== 'undefined' ? uploadedUrl : '';
-    const appearanceDesc = `A ${preferences?.height || 'average height'} ${preferences?.age || 'adult'} with a ${preferences?.bodyType || 'average'} build`;
-    const occasionLabel = preferences?.occasion || 'fashionable event';
-    const occasionSpecificity = 'stylish and appropriate';
-    const ethnicAppearance = typeof photoAnalysis !== 'undefined' && photoAnalysis.ethnicAppearance ? photoAnalysis.ethnicAppearance : 'fashion model';
-    const outfitDesc = outfitRecommendation?.outfitDescription || outfitRecommendation?.outfitName || 'a highly detailed stylish outfit';
-    const outfitImgPrompt = outfitRecommendation?.imagePrompt || outfitRecommendation?.outfitVisualDescription || '';
-
-    // --- 2. UPDATED PROMPT FOR FULL BODY ---
-    // Added "Extreme long shot" and "feet visible in frame" at the very beginning where the AI pays the most attention.
-    const imagePromptArray = [
-      `Extreme long shot, standing far back, full body visible from head to toe, feet and shoes clearly visible in frame`,
-      `REFERENCE_IMAGE: ${safeUploadedUrl}`, 
+    // Prepend the reference image line and add strict instructions to preserve face identity
+    const fullImagePrompt = [
+      `REFERENCE_IMAGE: ${uploadedUrl}`, // explicit reference image
       `Photorealistic full body fashion photography of ${appearanceDesc}`,
-      `standing upright in a confident natural pose, feet flat on ground`,
-      `MANDATORY OCCASION: ${occasionLabel}; dress code must be ${occasionSpecificity}`,
-      `wearing this exact elaborative outfit: ${outfitDesc}`,
-      `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch`,
-      `image detail prompt: ${outfitImgPrompt}`,
-      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly. Full body must be visible from head to toes; do NOT crop the head, torso, legs or feet.`,
-      `the outfit must visually communicate ${occasionLabel} immediately`,
-      `complete outfit visible from head to toe including shoes`,
+      `standing upright in a confident natural pose, feet flat on ground, both feet and shoes fully visible`,
+      `MANDATORY OCCASION: ${occasionGuidance.label}; dress code must be ${occasionGuidance.specificity}`,
+      `wearing this exact elaborative outfit: ${outfitRecommendation.outfitDescription}`,
+      `visible accessories must be included exactly as described: jewellery, watch, belt or waist detail, bag or clutch, scarf, dupatta, tie, pocket square, headwear or hair accessory when present`,
+      `image detail prompt: ${outfitRecommendation.imagePrompt}`,
+      `STRICT INSTRUCTIONS: Use the face in REFERENCE_IMAGE exactly — preserve identity, facial proportions, hairline, skin tone and eyes. Full body must be visible from head to toes; do NOT crop the head, torso, legs or feet. Reproduce clothing details exactly.`,
+      `the outfit must visually communicate ${occasionGuidance.label} immediately; avoid generic casual clothing, plain t-shirts, basic jeans, gymwear, or office wear unless explicitly requested`,
+      `complete outfit visible from head to toe including shoes, socks if applicable, belt, watch, jewellery, bag and all accessories`,
       `shoes clearly detailed — leather texture, sole, laces or straps fully visible`,
       `entire body in frame: head, torso, arms, legs, feet — nothing cropped`,
       `clean white seamless studio background, professional fashion editorial lighting, sharp crisp details throughout`,
       `ultra high resolution 4K, magazine cover quality, photorealistic skin and fabric textures`,
-      `the model looks like a real ${ethnicAppearance} person`,
-      `camera angle: straight on, full-length shot, neutral expression`
-    ];
+      `the model looks like a real ${photoAnalysis.ethnicAppearance} person`,
+      `camera angle: straight on, full-length shot, neutral expression`,
+    ].join(', ');
 
-    // This combines all your prompt lines into one long comma-separated sentence
-    const imagePromptText = imagePromptArray.join(", ");
-
-    // Ensure the prompt is URL encoded
-    const encodedPrompt = encodeURIComponent(imagePromptText);
-
-    // Pollinations AI documentation recommends passing specific query parameters for portrait aspect ratio and quality.
-    // &width=768&height=1024 forces a vertical portrait, &nologo=true removes the watermark, &enhance=false prevents Pollinations from overwriting our prompt.
-    const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=1024&nologo=true&enhance=false`;
-console.log('🎨 Image generation initiated'); 
+    let generatedImageUrl = null;
+    let generatedImageSrcSet = null;
+    try {
+      const seed = Math.floor(Math.random() * 999999);
+      const imageResult = await generateImageWithPollinations(fullImagePrompt, seed);
+      generatedImageUrl = imageResult.url;
+      generatedImageSrcSet = imageResult.srcset;
+    } catch (imageError) {
+      console.error('Image generation error:', imageError.message);
+    }
 
     res.json({
       success: true,
       photoAnalysis,
       outfitRecommendation,
       generatedImageUrl,
+      generatedImageSrcSet,
+      photoPath: req.file.filename,
+      referenceImageUrl: uploadedUrl,
     });
   } catch (error) {
-    console.error('❌ Error during analysis:', error);
-    res.status(500).json({
-      error: 'Failed to analyze photo and generate recommendation',
-      details: error.message,
-    });
-  }
-});
-
-// Outfit history endpoint
-router.get('/outfits', async (req, res) => {
-  try {
-    const outfits = db
-      .prepare('SELECT * FROM saved_outfits ORDER BY created_at DESC')
-      .all();
-    res.json(outfits);
-  } catch (error) {
-    console.error('Error fetching outfits:', error);
-    res.status(500).json({ error: 'Failed to fetch outfits' });
-  }
-});
-
-// Save outfit endpoint
-router.post('/save-outfit', async (req, res) => {
-  try {
-    const { userId, outfitName, recommendation, imageUrl } = req.body;
-
-    if (!userId || !outfitName || !recommendation) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const outfitId = uuidv4();
-    const createdAt = new Date().toISOString();
-
-    db.prepare(
-      'INSERT INTO saved_outfits (id, user_id, outfit_name, recommendation, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(outfitId, userId, outfitName, JSON.stringify(recommendation), imageUrl, createdAt);
-
-    res.json({
-      success: true,
-      outfitId,
-      message: 'Outfit saved successfully',
-    });
-  } catch (error) {
-    console.error('Error saving outfit:', error);
-    res.status(500).json({ error: 'Failed to save outfit' });
+    console.error('Analysis error:', error);
+    res.status(500).json({ error: error.message || 'Analysis failed' });
   }
 });
 
