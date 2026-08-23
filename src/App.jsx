@@ -180,12 +180,20 @@ export default function App() {
               </button>
             )}
             {user ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
-                  {user.name[0].toUpperCase()}
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+                    {user?.name ? user.name[0].toUpperCase() : ''}
+                  </div>
+                  <span className="text-purple-300 text-sm font-medium hidden sm:block">{user?.name ? user.name.split(' ')[0] : ''}</span>
                 </div>
-                <span className="text-purple-300 text-sm font-medium hidden sm:block">{user.name.split(' ')[0]}</span>
-              </div>
+                <button
+                  onClick={handleSignOut}
+                  style={{ backgroundColor: 'transparent', color: '#ffffff', border: '1px solid #4b5563', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}
+                >
+                  Sign out
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => setShowAuth(true)}
