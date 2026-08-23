@@ -12,27 +12,14 @@ const asList = (value) => {
 };
 
 export default function OutfitResult({ result, onSave, user }) {
-  // Add this function near the top of your component, before the 'return' statement
-  const handleSaveOutfitClick = async () => {
-    // Assuming you have a 'user' or 'session' variable from your Supabase auth state
-    // If you named your auth variable differently, replace 'user' with your variable name
-    if (!user) {
-      alert("Please sign in to save your outfit!");
-      // Optional: If you have a function that opens the sign-in modal, call it here instead of the alert.
-      return;
-    }
-
-    try {
-      // Your existing code/function to save the outfit to Supabase goes here
-      // await saveToSupabase(outfitData);
-      alert("Outfit saved successfully!");
-    } catch (error) {
-      alert("Error saving outfit. Please try again.");
-    }
-  };
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeTab, setActiveTab] = useState('outfit');
+
+  // New states to handle the Save/Unsave toggle
+  const [isSaved, setIsSaved] = useState(false);
+  const [savedOutfitId, setSavedOutfitId] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const { photoAnalysis, outfitRecommendation = {}, generatedImageUrl } = result;
   const colorPalette = asList(outfitRecommendation.colorPalette);
@@ -40,10 +27,77 @@ export default function OutfitResult({ result, onSave, user }) {
   const stylingTips = asList(outfitRecommendation.stylingTips);
   const occasions = asList(outfitRecommendation.occasions);
 
+  // 1. Function to SAVE the outfit
+  const handleSaveOutfitClick = async () => {
+    if (!user) {
+      alert("Please sign in to save your outfit!");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const res = await fetch('/api/users/save-outfit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          skinTone: photoAnalysis?.skinTone,
+          outfitDescription: outfitRecommendation?.outfitDescription,
+          outfitExplanation: outfitRecommendation?.explanation,
+          outfitImageUrl: generatedImageUrl,
+          userPhotoPath: result.photoPath,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setIsSaved(true);
+        // Save the unique ID so we can delete it later if the user clicks "Unsave"
+        if (data.outfitId || data.id) {
+          setSavedOutfitId(data.outfitId || data.id);
+        }
+      } else {
+        alert("Failed to save outfit.");
+      }
+    } catch (error) {
+      alert("Error saving outfit. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 2. Function to UNSAVE the outfit
+  const handleUnsaveOutfitClick = async () => {
+    if (!user) return;
+
+    setIsProcessing(true);
+    try {
+      if (savedOutfitId) {
+        // This calls the backend delete route you added in Step 1
+        const res = await fetch(`/api/users/delete-outfit/${savedOutfitId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          setIsSaved(false);
+          setSavedOutfitId(null);
+        }
+      } else {
+        // Fallback just in case the ID wasn't captured
+        setIsSaved(false);
+      }
+    } catch (error) {
+      alert("Error removing outfit.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleImageError = (e) => {
-    // Clear further error handling to avoid infinite loop
     if (e?.target) e.target.onerror = null;
-    // Use the backend proxy for the fallback so the browser does not request Pollinations directly
     const fallbackPrompt = encodeURIComponent(outfitRecommendation.imagePrompt || outfitRecommendation.outfitDescription || 'professional fashion outfit portrait');
     const fallbackUrl = `/api/proxy-image?prompt=${fallbackPrompt}&width=768&height=1024`;
     e.target.src = fallbackUrl;
@@ -65,27 +119,24 @@ export default function OutfitResult({ result, onSave, user }) {
       </div>
 
       {/* Tabs */}
-      <>
-          <div className="flex gap-1 glass rounded-xl p-1 mb-4">
-            {[{ id: 'outfit', label: 'Outfit Look' }, { id: 'details', label: 'Outfit Details' }, { id: 'analysis', label: 'Your Profile' }].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === tab.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-white/50 hover:text-white/80'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      <div className="flex gap-1 glass rounded-xl p-1 mb-4">
+        {[{ id: 'outfit', label: 'Outfit Look' }, { id: 'details', label: 'Outfit Details' }, { id: 'analysis', label: 'Your Profile' }].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+              activeTab === tab.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-          
       <div className="space-y-4">
-        {/* 'Outfit Look' Tab Content (No Explanation) */}
+        {/* 'Outfit Look' Tab Content */}
         {activeTab === 'outfit' && (
           <>
-            {/* Image Section */}
             <div className="rounded-2xl overflow-hidden glass border border-white/10 mb-6">
               {generatedImageUrl && !imageError ? (
                 <div className="relative">
@@ -109,10 +160,8 @@ export default function OutfitResult({ result, onSave, user }) {
                 </div>
               )}
             </div>
-            {/* Look Description Card */}
             <div className="look-summary-card p-6 rounded-2xl glass border border-white/10 mb-4">
               <p className="description-text leading-relaxed text-sm">
-                {/* Fallback regex if backend dumps raw JSON */}
                 {outfitRecommendation.outfitDescription?.includes('{"outfitName"') 
                   ? outfitRecommendation.outfitDescription.match(/"outfitDescription"\s*:\s*"([^"]+)"/)?.[1] || "Stylish modern outfit tailored to your preferences."
                   : outfitRecommendation.outfitDescription}
@@ -121,7 +170,7 @@ export default function OutfitResult({ result, onSave, user }) {
           </>
         )}
 
-        {/* 'Outfit Details' Tab Content (Full details including Explanation) */}
+        {/* 'Outfit Details' Tab Content */}
         {activeTab === 'details' && (
           <div className="look-summary-card">
             <div className="summary-header">
@@ -132,23 +181,19 @@ export default function OutfitResult({ result, onSave, user }) {
                 </div>
               )}
             </div>
-
             <div className="summary-section">
               <p className="description-text">
-                {/* Fallback regex if backend dumps raw JSON */}
                 {outfitRecommendation.outfitDescription?.includes('{"outfitName"') 
                   ? outfitRecommendation.outfitDescription.match(/"outfitDescription"\s*:\s*"([^"]+)"/)?.[1] || "Stylish modern outfit tailored to your preferences."
                   : outfitRecommendation.outfitDescription}
               </p>
             </div>
-
             <div className="summary-section">
               <h3>Color Palette</h3>
               <div className="color-swatches">
                 {colorPalette.map(c => <span key={c} className="swatch">{c}</span>)}
               </div>
             </div>
-
             <div className="summary-grid">
               <div className="summary-section lists">
                 <h3>The Pieces</h3>
@@ -156,7 +201,6 @@ export default function OutfitResult({ result, onSave, user }) {
                   {keyPieces.length > 0 ? keyPieces.map(p => <li key={p}>{p}</li>) : <li className="text-white/50">Pieces loading...</li>}
                 </ul>
               </div>
-
               <div className="summary-section lists">
                 <h3>Styling Tips</h3>
                 <ul className="styled-list">
@@ -164,7 +208,6 @@ export default function OutfitResult({ result, onSave, user }) {
                 </ul>
               </div>
             </div>
-
             <div className="summary-section rationale">
               <h3>Why it works for you</h3>
               <p className="why-text">
@@ -176,7 +219,7 @@ export default function OutfitResult({ result, onSave, user }) {
           </div>
         )}
 
-    
+        {/* 'Your Profile' Tab Content */}
         {activeTab === 'analysis' && (
           <div className="profile-analysis-card p-5 rounded-2xl glass border border-white/10">
             <h3 className="text-white font-semibold mb-2">Your Profile</h3>
@@ -189,32 +232,52 @@ export default function OutfitResult({ result, onSave, user }) {
           </div>
         )}
         
-        {/* --- ADD YOUR SAVE BUTTON HERE --- */}
-        <button 
-          onClick={handleSaveOutfitClick}
-          style={{
-            backgroundColor: '#9333ea', 
-            color: '#ffffff',
-            width: '100%',
-            padding: '10px 16px',
-            borderRadius: '8px',
-            fontWeight: '500',
-            border: 'none',
-            cursor: 'pointer',
-            marginTop: '20px', /* Adds space above the button */
-            marginBottom: '10px', /* Adds space between this and the Try Another Outfit button */
-            transition: 'background-color 0.2s'
-          }}
-          onMouseOver={(e) => e.target.style.backgroundColor = '#7e22ce'}
-          onMouseOut={(e) => e.target.style.backgroundColor = '#9333ea'}
-        >
-          Save Outfit
-        </button>
-        {/* --- END OF SAVE BUTTON --- */}
-
+        {/* --- DYNAMIC SAVE / UNSAVE BUTTON --- */}
+        {isSaved ? (
+          <button 
+            onClick={handleUnsaveOutfitClick}
+            disabled={isProcessing}
+            style={{
+              backgroundColor: '#dc2626', // Red color when it's saved so it looks like a delete action
+              color: '#ffffff',
+              width: '100%',
+              padding: '10px 16px',
+              borderRadius: '8px',
+              fontWeight: '500',
+              border: 'none',
+              cursor: isProcessing ? 'not-allowed' : 'pointer',
+              marginTop: '20px',
+              marginBottom: '10px',
+              transition: 'background-color 0.2s',
+              opacity: isProcessing ? 0.7 : 1
+            }}
+          >
+            {isProcessing ? 'Removing...' : 'Unsave this Outfit'}
+          </button>
+        ) : (
+          <button 
+            onClick={handleSaveOutfitClick}
+            disabled={isProcessing}
+            style={{
+              backgroundColor: '#9333ea', // Original Purple color
+              color: '#ffffff',
+              width: '100%',
+              padding: '10px 16px',
+              borderRadius: '8px',
+              fontWeight: '500',
+              border: 'none',
+              cursor: isProcessing ? 'not-allowed' : 'pointer',
+              marginTop: '20px',
+              marginBottom: '10px',
+              transition: 'background-color 0.2s',
+              opacity: isProcessing ? 0.7 : 1
+            }}
+          >
+            {isProcessing ? 'Saving...' : 'Save Outfit'}
+          </button>
+        )}
+        {/* --- END OF BUTTON --- */}
       </div>
-    </>
-  </div>
+    </div>
   );
 }
-
