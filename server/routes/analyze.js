@@ -105,7 +105,12 @@ function buildOccasionGuidance(occasion) {
 }
 
 // Strong negative instructions inserted into prompts to avoid underwear/nudity
-const NEGATIVE_INSTRUCTIONS = 'STRICT_NEGATIVE: no nudity, no underwear, not shirtless, no lingerie, no swimsuits, no exposed torso, avoid underwear-only poses, no explicit content.';
+// Both strings are deliberately tiny: the generator only honours roughly the first 77 tokens of a
+// prompt, so anything verbose here pushes the garments out of the window and the outfit is ignored.
+const NEGATIVE_INSTRUCTIONS = 'fully clothed, uncropped';
+
+// Framing goes first because early tokens carry the most weight.
+const FULL_BODY_FRAMING = 'full body photo, head to toe, shoes and floor visible';
 
 // Helper: validate generated image using Groq vision model (returns { nsfwProbability, similarity, explanation })
 async function validateImageWithGroq(groqClient, imageUrl, outfitText) {
@@ -122,21 +127,25 @@ async function validateImageWithGroq(groqClient, imageUrl, outfitText) {
             },
             {
               type: 'text',
-              text: `You are an image validation assistant. Analyze the provided image and compare it to the provided outfit description. Respond ONLY in strict JSON with fields: {"nsfwProbability": number between 0 and 1, "similarity": number between 0 and 1, "explanation": string}.
+              text: `You are an image validation assistant. Analyze the provided image and compare it to the provided outfit description. Respond ONLY in strict JSON with fields: {"nsfwProbability": number between 0 and 1, "similarity": number between 0 and 1, "fullBody": boolean, "explanation": string}.
 
 Outfit description (for comparison): ${outfitText}
 
 Instructions:
 1) Return nsfwProbability = probability the image contains nudity, underwear-only, or sexual content (0.0-1.0).
 2) Return similarity = how well the image matches the outfit description (0.0 = unrelated, 1.0 = exact match). Use a CLIP-like comparison.
-3) Provide a short explanation field describing major mismatches (e.g., "image shows underwear and exposed torso", or "image shows casual T-shirt and jeans instead of sherwani").
+3) Return fullBody = true ONLY if the whole person is inside the frame from the top of the head down to the shoes, with both feet visible. Return false for headshots, waist-up or knee-up crops, or any image where the head or the footwear is cut off by the frame edge.
+4) Provide a short explanation field describing major mismatches (e.g., "image shows underwear and exposed torso", or "cropped at the knees, shoes not visible").
 
-Respond only with JSON and nothing else.`,
+Answer immediately with the JSON object only: no reasoning, no commentary, no markdown fences.`,
             },
           ],
         },
       ],
-      max_tokens: 1500,
+      // Reasoning is disabled because the model otherwise spends the whole token budget on a
+      // <think> block and gets truncated before it emits any JSON.
+      reasoning_effort: 'none',
+      max_tokens: 800,
       response_format: { type: 'json_object' },
     });
 
@@ -145,18 +154,19 @@ Respond only with JSON and nothing else.`,
     if (!match) {
       console.warn('Validator failed to return JSON. Skipping validation. Raw:', raw);
       // Accept the image anyway if the validator gets confused
-      return { nsfwProbability: 0, similarity: 1.0, explanation: 'Validation bypassed' };
+      return { nsfwProbability: 0, similarity: 1.0, fullBody: true, explanation: 'Validation bypassed' };
     }
     const parsed = JSON.parse(match[0]);
     return {
       nsfwProbability: Number(parsed.nsfwProbability) || 0,
       similarity: Number(parsed.similarity) || 0,
+      fullBody: parsed.fullBody !== false,
       explanation: String(parsed.explanation || ''),
     };
   } catch (err) {
     console.warn('Image validation failed:', err?.message || err);
     // Accept the image anyway if the Groq service fails
-    return { nsfwProbability: 0, similarity: 1.0, explanation: 'Validation service error bypassed' };
+    return { nsfwProbability: 0, similarity: 1.0, fullBody: true, explanation: 'Validation service error bypassed' };
   }
 }
 
@@ -177,21 +187,28 @@ async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
 
-  // Request multiple sizes and return a srcset so the browser can pick the right density
-  const widths = [768, 1536, 2048, 3072]; // include larger widths for high-DPI
+  // 2:3 is the framing that reliably keeps hair and shoes inside the frame; taller 9:16 canvases
+  // make the generator push the feet against the bottom edge.
+  const widths = [576, 768, 1024];
   const srcParts = widths.map((w) => {
-    const h = Math.round((w * 16) / 9); // keep 9:16 portrait aspect ratio (width:height)
+    const h = Math.round((w * 3) / 2);
     return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
   });
 
   const defaultWidth = 1024;
-  const defaultHeight = 1820;
+  const defaultHeight = 1536;
   const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
 
   return {
     url: defaultUrl,
     srcset: srcParts.join(', '),
   };
+}
+
+// Rank candidates so a safe full-body image always beats a cropped one, similarity breaking ties.
+function scoreCandidate({ validation }, nsfwThreshold) {
+  const safe = validation.nsfwProbability <= nsfwThreshold ? 1 : 0;
+  return safe * 100 + (validation.fullBody ? 10 : 0) + validation.similarity;
 }
 
 // In-memory job store for async processing (simple, non-persistent)
@@ -231,7 +248,8 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
           ],
         },
       ],
-      max_tokens: 2000,
+      reasoning_effort: 'none',
+      max_tokens: 800,
       response_format: { type: 'json_object' },
     });
 
@@ -252,7 +270,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
         role: 'user',
         content: `Create a detailed outfit recommendation for a person with the following profile:\n\nPhoto Analysis:\n- Skin Tone: ${photoAnalysis.skinTone}\n- Gender: ${photoAnalysis.gender}\n- Ethnic Appearance: ${photoAnalysis.ethnicAppearance}\n- Hair: ${photoAnalysis.hairDescription}\n- Face: ${photoAnalysis.faceDescription}\n- Appearance: ${photoAnalysis.appearanceDescription}\n\nPreferences:\n- Occasion: ${occasionGuidance.label}\n- Mandatory Occasion Dress Code: ${occasionGuidance.specificity}\n- Budget: ${budget}\n- Height: ${height}\n- Age Group: ${age}\n- Body Type: ${bodyType}\n\nProvide:\n1. A complete, elaborative outfit breakdown that is specific to the occasion and budget.\n2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpa[...]\n3. For each item, include color, fabric/material, texture/finish, fit/silhouette, and small design details.\n4. Why this outfit suits their appearance, body type, skin tone, ethnic appearance, and the exact occasion dress code.\n5. Styling tips personalized to their look.\n\nRespond in JSON:\n{\n  "outfitName": "Short catchy name",\n  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/material[...]\n  "colorPalette": ["array of 3-6 color names used in the outfit, e.g. Terracotta"],\n  "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",\n  "keyPieces": ["array of 5-8 short strings, one per garment/accessory, e.g. Charcoal linen blazer"],
   "occasions": ["array of 2-4 short strings naming events this look suits"],
-  "stylingTips": ["array of 3-5 personalized styling tips, including how to place or pair accessories"],\n  "imagePrompt": "Concise 30-word max full-body outfit prompt describing top clothes, lower clothes, and shoes from head to toe."\n}`,
+  "stylingTips": ["array of 3-5 personalized styling tips, including how to place or pair accessories"],\n  "imagePrompt": "Max 20 words: colour + garment for the main upper layer, the lower garment and the footwear, in that head-to-toe order. Garments only, no accessories, no camera or framing words."\n}`,
       },
     ],
     max_tokens: 2600,
@@ -272,18 +290,15 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   }
 
 // 1. Keep appearance brief so it doesn't waste prompt length or force a face close-up
-const simpleAppearance = `a real-looking ${photoAnalysis.ethnicAppearance || ''} ${photoAnalysis.gender || 'person'} with ${photoAnalysis.skinTone || 'medium'} skin tone, ${bodyType || 'average'} build`;
+const simpleAppearance = `${photoAnalysis.ethnicAppearance || ''} ${photoAnalysis.gender || 'person'}, ${photoAnalysis.skinTone || 'medium'} skin, ${bodyType || 'average'} build`;
 
 // 2. Put FULL-BODY framing at the VERY FRONT so Flux reads it first before any truncation
 const baseImagePromptParts = [
-    `Full-length wide shot fashion photograph, full body standing portrait from head to toe, showing complete outfit and footwear on floor`,
-    `${simpleAppearance} wearing: ${outfitRecommendation.imagePrompt}`,
-    `occasion: ${occasionGuidance.label}`,
-    `clean white studio backdrop, 4K, sharp focus`
-]; 
-
-  // Append strong negative instructions so the generator avoids underwear/nudity
-  baseImagePromptParts.push(NEGATIVE_INSTRUCTIONS);
+    FULL_BODY_FRAMING,
+    `${simpleAppearance} wearing ${outfitRecommendation.imagePrompt}`,
+    'plain studio backdrop',
+    NEGATIVE_INSTRUCTIONS,
+];
 
   const maxAttempts = parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '2', 10);
   const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
@@ -291,7 +306,9 @@ const baseImagePromptParts = [
 
   let generatedImageUrl = null;
   let generatedImageSrcSet = null;
-  let imageValidation = { nsfwProbability: 1, similarity: 0, explanation: 'not validated' };
+  let imageValidation = { nsfwProbability: 1, similarity: 0, fullBody: false, explanation: 'not validated' };
+  // A cropped image is a defect, so keep the best candidate instead of whatever the last attempt produced.
+  let bestCandidate = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -300,29 +317,31 @@ const baseImagePromptParts = [
       // For later attempts, increase emphasis on the outfit name and wearing verb
       let promptParts = [...baseImagePromptParts];
       if (attempt > 1) {
-        promptParts.unshift(`The subject is clearly wearing: ${outfitRecommendation.outfitName}`);
-        promptParts.push('Emphasize: full outfit clearly visible and distinct from underwear or casual wear');
+        promptParts.unshift('zoomed out wide shot');
       }
 
       const fullImagePrompt = promptParts.join(', ');
 
       const imageResult = await generateImageWithPollinations(fullImagePrompt, seed);
-      generatedImageUrl = imageResult.url;
-      generatedImageSrcSet = imageResult.srcset;
 
       // Pollinations renders on first request; warm the URL so the validator can fetch it in time
-      await warmImageUrl(generatedImageUrl);
+      await warmImageUrl(imageResult.url);
 
       // Validate the generated image using Groq vision model
-      imageValidation = await validateImageWithGroq(groq, generatedImageUrl, `${outfitRecommendation.outfitName}: ${outfitRecommendation.outfitDescription}`);
+      const validation = await validateImageWithGroq(groq, imageResult.url, `${outfitRecommendation.outfitName}: ${outfitRecommendation.outfitDescription}`);
+      const candidate = { result: imageResult, validation };
+      const isSafe = validation.nsfwProbability <= nsfwThreshold;
 
-      // Accept if passes thresholds
-      if (imageValidation.nsfwProbability <= nsfwThreshold && imageValidation.similarity >= similarityThreshold) {
-        break; // good image
+      if (!bestCandidate || scoreCandidate(candidate, nsfwThreshold) > scoreCandidate(bestCandidate, nsfwThreshold)) {
+        bestCandidate = candidate;
       }
 
-      // Otherwise log and retry (unless last attempt)
-      console.warn(`Image validation attempt ${attempt} failed: nsfw=${imageValidation.nsfwProbability}, sim=${imageValidation.similarity}. Explanation: ${imageValidation.explanation}`);
+      // Accept only a safe, on-brief, uncropped image
+      if (isSafe && validation.fullBody && validation.similarity >= similarityThreshold) {
+        break;
+      }
+
+      console.warn(`Image validation attempt ${attempt} failed: nsfw=${validation.nsfwProbability}, sim=${validation.similarity}, fullBody=${validation.fullBody}. Explanation: ${validation.explanation}`);
 
       // continue loop to retry
     } catch (imageError) {
@@ -330,13 +349,19 @@ const baseImagePromptParts = [
     }
   }
 
+  if (bestCandidate) {
+    generatedImageUrl = bestCandidate.result.url;
+    generatedImageSrcSet = bestCandidate.result.srcset;
+    imageValidation = bestCandidate.validation;
+  }
+
   // Only drop the image when it is unsafe; a low similarity score is not worth showing nothing.
   if (imageValidation.nsfwProbability > nsfwThreshold) {
     console.warn('Final generated image failed the safety check. Returning null image to frontend. Validation:', imageValidation);
     generatedImageUrl = null;
     generatedImageSrcSet = null;
-  } else if (imageValidation.similarity < similarityThreshold) {
-    console.warn('Final generated image has low similarity but is safe; keeping it. Validation:', imageValidation);
+  } else if (!imageValidation.fullBody || imageValidation.similarity < similarityThreshold) {
+    console.warn('Final generated image is imperfect but safe; keeping it. Validation:', imageValidation);
   }
 
   return {

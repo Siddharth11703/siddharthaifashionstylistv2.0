@@ -111,8 +111,10 @@ export default function OutfitResult({ result, onSave, user }) {
     }
     // Retry once through the server-side proxy before giving up on the image.
     setFallbackTried(true);
-    const fallbackPrompt = encodeURIComponent(outfitRecommendation.imagePrompt || outfitRecommendation.outfitDescription || 'professional fashion outfit portrait');
-    if (e?.target) e.target.src = `/api/proxy-image?prompt=${fallbackPrompt}&width=768&height=1024`;
+    const fallbackPrompt = encodeURIComponent(
+      `full body shot from head to toe, entire figure in frame including shoes, full-length fashion photograph, ${outfitRecommendation.imagePrompt || outfitRecommendation.outfitDescription || 'professional fashion outfit'}`
+    );
+    if (e?.target) e.target.src = `/api/proxy-image?prompt=${fallbackPrompt}&width=768&height=1152`;
   };
 
   return (
@@ -152,21 +154,22 @@ export default function OutfitResult({ result, onSave, user }) {
               {generatedImageUrl && !imageError ? (
                 <div className="relative">
                   {!imageLoaded && (
-                    <div className="w-full h-96 flex flex-col items-center justify-center gap-3 bg-white/5">
+                    <div className="w-full aspect-[2/3] flex flex-col items-center justify-center gap-3 bg-white/5">
                       <div className="w-10 h-10 border-2 border-purple-500/40 border-t-purple-400 rounded-full animate-spin" />
                       <p className="text-white/40 text-sm">Generating your look...</p>
                     </div>
                   )}
+                  {/* object-contain keeps the whole head-to-shoes frame visible instead of cropping it */}
                   <img 
                     src={generatedImageUrl} 
                     alt={outfitRecommendation.outfitName || 'AI generated outfit'} 
                     onLoad={() => setImageLoaded(true)} 
                     onError={handleImageError}
-                    className={`w-full h-96 object-cover transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`} 
+                    className={`w-full max-h-[80vh] object-contain bg-black/20 transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`} 
                   />
                 </div>
               ) : (
-                <div className="w-full h-96 flex items-center justify-center bg-white/5">
+                <div className="w-full aspect-[2/3] flex items-center justify-center bg-white/5">
                   <p className="text-white/40">No image available</p>
                 </div>
               )}
