@@ -9,8 +9,11 @@ import { v4 as uuidv4 } from 'uuid';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
-const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
-const GROQ_TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'openai/gpt-oss-120b';
+const GROQ_VISION_MODEL =
+  process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
+
+const GROQ_TEXT_MODEL =
+  process.env.GROQ_TEXT_MODEL || 'openai/gpt-oss-120b';
 
 const getUploadDir = () => {
   if (process.env.VERCEL === '1') {
@@ -58,11 +61,16 @@ function getFallbackPhotoAnalysis() {
 
 // Reasoning-capable models can emit <think> blocks before the JSON payload.
 function stripReasoning(rawText) {
-  return String(rawText || '').replace(/<think>[\s\S]*?<\/think>/gi, '');
+  return String(rawText || '').replace(
+    /<think>[\s\S]*?<\/think>/gi,
+    ''
+  );
 }
 
 function parsePhotoAnalysis(rawText) {
-  const jsonMatch = stripReasoning(rawText).match(/\{[\s\S]*\}/);
+  const jsonMatch = stripReasoning(rawText).match(
+    /\{[\s\S]*\}/
+  );
 
   if (!jsonMatch) {
     return getFallbackPhotoAnalysis();
@@ -83,8 +91,11 @@ function normalizePreference(value) {
 }
 
 function buildOccasionGuidance(occasion) {
-  const normalizedOccasion = normalizePreference(occasion);
-  const key = normalizedOccasion.toLowerCase();
+  const normalizedOccasion =
+    normalizePreference(occasion);
+
+  const key =
+    normalizedOccasion.toLowerCase();
 
   const rules = [
     {
@@ -99,12 +110,19 @@ function buildOccasionGuidance(occasion) {
         'reception',
         'haldi',
       ],
+
       guidance:
-        'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual',
+        'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, loungewear, or gymwear',
     },
 
     {
-      matches: ['party', 'club', 'birthday', 'celebration'],
+      matches: [
+        'party',
+        'club',
+        'birthday',
+        'celebration',
+      ],
+
       guidance:
         'party-ready statement outfit with elevated fabrics, stylish evening details, confident accessories, and event-appropriate shoes; avoid basic daytime casual wear',
     },
@@ -118,18 +136,30 @@ function buildOccasionGuidance(occasion) {
         'meeting',
         'work',
       ],
+
       guidance:
         'professional polished business attire with structured pieces, modest fit, refined shoes, and minimal accessories; avoid partywear, loungewear, and overly casual items',
     },
 
     {
-      matches: ['date', 'dinner', 'romantic'],
+      matches: [
+        'date',
+        'dinner',
+        'romantic',
+      ],
+
       guidance:
         'smart romantic dinner/date attire, flattering elevated pieces, tasteful accessories, and polished footwear; avoid gymwear and basic everyday clothing',
     },
 
     {
-      matches: ['gym', 'workout', 'fitness', 'sport'],
+      matches: [
+        'gym',
+        'workout',
+        'fitness',
+        'sport',
+      ],
+
       guidance:
         'performance athletic outfit with breathable technical fabrics, supportive trainers, and sport-ready layering; avoid formalwear and delicate accessories',
     },
@@ -143,13 +173,16 @@ function buildOccasionGuidance(occasion) {
         'christmas',
         'puja',
       ],
+
       guidance:
         'festive celebratory attire with rich colors, dressy details, culturally appropriate elements, accessories, and polished footwear; avoid plain casual clothing',
     },
   ];
 
   const matchedRule = rules.find((rule) =>
-    rule.matches.some((term) => key.includes(term))
+    rule.matches.some((term) =>
+      key.includes(term)
+    )
   );
 
   const specificity = matchedRule
@@ -159,28 +192,30 @@ function buildOccasionGuidance(occasion) {
       }-appropriate styling with no generic casual outfit unless the occasion itself requires it`;
 
   return {
-    label: normalizedOccasion || 'the requested occasion',
+    label:
+      normalizedOccasion ||
+      'the requested occasion',
+
     specificity,
   };
 }
 
-// Strong negative instructions inserted into prompts to avoid underwear/nudity.
-const NEGATIVE_INSTRUCTIONS = 'fully clothed, uncropped';
+// Strong negative instructions inserted into prompts.
+const NEGATIVE_INSTRUCTIONS =
+  'fully clothed, uncropped';
 
 // Full-body framing.
 const FULL_BODY_FRAMING =
-  'full body photo, head to toe, shoes and floor visible';
+  'full body, head to toe, shoes visible';
 
 /*
- * Validate the generated image using Groq vision.
+ * Validate generated image using Groq vision.
  *
- * NEW:
- * - ageRequirement
- * - bodyTypeRequirement
- * - profileMatch
- *
- * The validator now checks whether the generated person actually
- * resembles the requested age and body type.
+ * This validator checks:
+ * - NSFW
+ * - outfit similarity
+ * - full-body framing
+ * - age/body-profile match
  */
 async function validateImageWithGroq(
   groqClient,
@@ -190,166 +225,127 @@ async function validateImageWithGroq(
   bodyTypeRequirement
 ) {
   try {
-    const response = await groqClient.chat.completions.create({
-      model: GROQ_VISION_MODEL,
+    const response =
+      await groqClient.chat.completions.create({
+        model: GROQ_VISION_MODEL,
 
-      messages: [
-        {
-          role: 'user',
+        messages: [
+          {
+            role: 'user',
 
-          content: [
-            {
-              type: 'image_url',
+            content: [
+              {
+                type: 'image_url',
 
-              image_url: {
-                url: imageUrl,
+                image_url: {
+                  url: imageUrl,
+                },
               },
-            },
 
-            {
-              type: 'text',
+              {
+                type: 'text',
 
-              text: `You are an image validation assistant.
+                text: `Check this generated fashion image.
 
-Analyze the generated image and compare it against the exact requested person profile and outfit.
+Required age: ${ageRequirement || 'not specified'}
+Required body type: ${
+                  bodyTypeRequirement ||
+                  'not specified'
+                }
 
-Respond ONLY in strict JSON with these fields:
-
-{
-  "nsfwProbability": number between 0 and 1,
-  "similarity": number between 0 and 1,
-  "fullBody": boolean,
-  "profileMatch": number between 0 and 1,
-  "explanation": string
-}
-
-Required age:
-${ageRequirement || 'not specified'}
-
-Required body type:
-${bodyTypeRequirement || 'not specified'}
-
-Outfit description:
+Outfit:
 ${outfitText}
 
-Instructions:
+Return ONLY JSON:
+{
+  "nsfwProbability": 0,
+  "similarity": 0,
+  "fullBody": true,
+  "profileMatch": 0,
+  "explanation": ""
+}
 
-1) Return nsfwProbability = probability the image contains nudity, underwear-only, or sexual content.
+Rules:
+- profileMatch checks visible age and actual body shape.
+- A young person is wrong for a 60-year-old request.
+- A slim body is wrong for plus-size.
+- A large/full body is wrong for slim or petite.
+- Athletic means visibly toned or muscular.
+- Judge body type from the actual physique, not the clothing.
+- fullBody is true only when the complete person from head to both shoes is visible.
+- similarity measures outfit matching.
+- nsfwProbability measures nudity/underwear/sexual content.
 
-2) Return similarity = how well the image matches the outfit description.
-0.0 = unrelated
-1.0 = exact match
+No markdown.
+No explanation outside JSON.`,
+              },
+            ],
+          },
+        ],
 
-3) Return fullBody = true ONLY when the entire person is visible from the top of the head to the shoes, with both feet visible.
+        reasoning_effort: 'none',
 
-Return false for:
-- headshots
-- waist-up images
-- knee-up images
-- cropped heads
-- cropped feet
-- missing footwear
+        max_tokens: 500,
 
-4) Return profileMatch = how closely the generated person's visible age and body shape match the requested profile.
-
-0.0 = clear mismatch
-1.0 = strong match
-
-5) AGE CHECK:
-
-A visibly young adult is a mismatch for an older requested age such as 60-year-old.
-
-For example:
-- requested 60-year-old → 20-30 year old person = mismatch
-- requested 60-year-old → visibly mature older adult = match
-
-Judge age from visible facial maturity, skin appearance, hair, facial structure, posture and overall physical appearance.
-
-6) BODY TYPE CHECK:
-
-Judge body type from the actual visible physique, NOT from clothing.
-
-Examples:
-
-- plus-size → visibly full, broad or large body frame
-- slim → visibly lean and narrow frame
-- petite → visibly small and compact frame
-- athletic → visibly muscular, toned or physically fit frame
-
-A slim or average body is a mismatch for plus-size.
-
-A thin body is a mismatch for athletic.
-
-A very large/full body is a mismatch for slim or petite.
-
-7) The clothes must NOT influence the body-type decision.
-
-For example, loose clothes on a slim person do NOT count as plus-size.
-
-8) Provide a short explanation describing any important:
-- age mismatch
-- body-type mismatch
-- outfit mismatch
-- framing mismatch
-
-Answer immediately with the JSON object only.
-No reasoning.
-No commentary.
-No markdown fences.`,
-            },
-          ],
+        response_format: {
+          type: 'json_object',
         },
-      ],
+      });
 
-      reasoning_effort: 'none',
+    const raw =
+      response.choices?.[0]?.message?.content ||
+      '';
 
-      max_tokens: 800,
-
-      response_format: {
-        type: 'json_object',
-      },
-    });
-
-    const raw = response.choices[0].message.content;
-
-    const match = stripReasoning(raw).match(/\{[\s\S]*\}/);
+    const match =
+      stripReasoning(raw).match(
+        /\{[\s\S]*\}/
+      );
 
     if (!match) {
       console.warn(
-        'Validator failed to return JSON. Raw response:',
+        'Validator failed to return JSON. Raw:',
         raw
       );
 
       /*
-       * IMPORTANT:
-       * Do NOT automatically accept an unvalidated image.
+       * Do not treat validation failure as a perfect match.
        */
       return {
         nsfwProbability: 0,
         similarity: 0,
         fullBody: false,
         profileMatch: 0,
-        explanation: 'Validation bypassed',
+        explanation:
+          'Validation returned invalid JSON',
       };
     }
 
-    const parsed = JSON.parse(match[0]);
+    const parsed =
+      JSON.parse(match[0]);
 
     return {
       nsfwProbability:
-        Number(parsed.nsfwProbability) || 0,
+        Number(
+          parsed.nsfwProbability
+        ) || 0,
 
       similarity:
-        Number(parsed.similarity) || 0,
+        Number(
+          parsed.similarity
+        ) || 0,
 
       fullBody:
         parsed.fullBody !== false,
 
       profileMatch:
-        Number(parsed.profileMatch) || 0,
+        Number(
+          parsed.profileMatch
+        ) || 0,
 
       explanation:
-        String(parsed.explanation || ''),
+        String(
+          parsed.explanation || ''
+        ),
     };
   } catch (err) {
     console.warn(
@@ -358,25 +354,33 @@ No markdown fences.`,
     );
 
     /*
-     * IMPORTANT:
-     * If validation fails, do NOT treat the image as perfect.
+     * Important:
+     * Validation failure should NOT delete an otherwise
+     * generated image later. The returned values simply
+     * indicate that validation could not confirm quality.
      */
     return {
       nsfwProbability: 0,
       similarity: 0,
       fullBody: false,
       profileMatch: 0,
-      explanation: 'Validation service error',
+      explanation:
+        'Validation service error',
     };
   }
 }
 
 // Pollinations generates the image on the first GET.
-// Pre-fetching the image makes the URL cheap to load later.
-async function warmImageUrl(url, timeoutMs = 45000) {
+async function warmImageUrl(
+  url,
+  timeoutMs = 45000
+) {
   try {
     const response = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
+      signal:
+        AbortSignal.timeout(
+          timeoutMs
+        ),
     });
 
     await response.arrayBuffer();
@@ -393,21 +397,33 @@ async function warmImageUrl(url, timeoutMs = 45000) {
 }
 
 // Generate image using Pollinations AI.
-async function generateImageWithPollinations(prompt, seed) {
-  const encodedPrompt = encodeURIComponent(prompt);
+async function generateImageWithPollinations(
+  prompt,
+  seed
+) {
+  const encodedPrompt =
+    encodeURIComponent(prompt);
 
   const seedParam = seed
     ? `&seed=${seed}`
     : '';
 
   // 2:3 ratio for reliable full-body framing.
-  const widths = [576, 768, 1024];
+  const widths = [
+    576,
+    768,
+    1024,
+  ];
 
-  const srcParts = widths.map((w) => {
-    const h = Math.round((w * 3) / 2);
+  const srcParts =
+    widths.map((w) => {
+      const h =
+        Math.round(
+          (w * 3) / 2
+        );
 
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
-  });
+      return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
+    });
 
   const defaultWidth = 1024;
   const defaultHeight = 1536;
@@ -424,35 +440,36 @@ async function generateImageWithPollinations(prompt, seed) {
 
   return {
     url: defaultUrl,
-    srcset: srcParts.join(', '),
+    srcset:
+      srcParts.join(', '),
   };
 }
 
 /*
- * Candidate ranking.
+ * Rank generated candidates.
  *
- * NEW:
- * profileMatch gets a significant weight so that:
- *
- * 60-year-old + plus-size
- *
- * is preferred over:
- *
- * 20-year-old + slim
+ * Safety is the highest priority.
+ * Full body is next.
+ * Profile match is strongly weighted.
+ * Outfit similarity is also considered.
  */
 function scoreCandidate(
   { validation },
   nsfwThreshold
 ) {
   const safe =
-    validation.nsfwProbability <= nsfwThreshold
+    validation.nsfwProbability <=
+    nsfwThreshold
       ? 1
       : 0;
 
   return (
     safe * 100 +
-    (validation.fullBody ? 10 : 0) +
-    ((validation.profileMatch || 0) * 25) +
+    (validation.fullBody
+      ? 10
+      : 0) +
+    ((validation.profileMatch || 0) *
+      25) +
     validation.similarity
   );
 }
@@ -476,25 +493,34 @@ async function processAnalysis({
   } = body || {};
 
   const occasionGuidance =
-    buildOccasionGuidance(occasion);
+    buildOccasionGuidance(
+      occasion
+    );
 
-  const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-  });
+  const groq =
+    new Groq({
+      apiKey:
+        process.env.GROQ_API_KEY,
+    });
 
   const photoData =
-    fs.readFileSync(photoPath);
+    fs.readFileSync(
+      photoPath
+    );
 
   const base64Photo =
-    photoData.toString('base64');
+    photoData.toString(
+      'base64'
+    );
 
-  // Public URL to uploaded photo.
+  // Build publicly accessible URL.
   const uploadedUrl =
     `${hostInfo.protocol}://${hostInfo.host}/uploads/${filename}`;
 
   /*
-   * STEP 1:
-   * Analyze uploaded photo.
+   * ==========================================================
+   * STEP 1: PHOTO ANALYSIS
+   * ==========================================================
    */
   let photoAnalysis =
     getFallbackPhotoAnalysis();
@@ -521,33 +547,9 @@ async function processAnalysis({
               {
                 type: 'text',
 
-                text: `
-Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS.
+                text: `Carefully analyze this person's photo and extract physical appearance information for a hyper-realistic AI fashion image.
 
-Return:
-
-1. skinTone:
-exact skin tone
-
-2. gender:
-male/female/neutral
-
-3. hairDescription:
-hair color, length, texture
-
-4. faceDescription:
-key facial features
-
-5. ethnicAppearance:
-apparent ethnic appearance
-
-6. appearanceDescription:
-one-sentence holistic description
-
-7. styleFeatures:
-current visible style elements
-
-Respond ONLY in JSON:
+Return ONLY valid JSON:
 
 {
   "skinTone": "",
@@ -560,8 +562,7 @@ Respond ONLY in JSON:
 }
 
 Do not include markdown.
-Do not include conversational text.
-`,
+Do not include conversational text.`,
               },
             ],
           },
@@ -569,7 +570,7 @@ Do not include conversational text.
 
         reasoning_effort: 'none',
 
-        max_tokens: 800,
+        max_tokens: 500,
 
         response_format: {
           type: 'json_object',
@@ -578,7 +579,10 @@ Do not include conversational text.
 
     photoAnalysis =
       parsePhotoAnalysis(
-        visionResponse.choices[0].message.content
+        visionResponse
+          .choices[0]
+          .message
+          .content
       );
   } catch (visionError) {
     console.warn(
@@ -588,8 +592,9 @@ Do not include conversational text.
   }
 
   /*
-   * STEP 2:
-   * Generate outfit recommendation.
+   * ==========================================================
+   * STEP 2: OUTFIT RECOMMENDATION
+   * ==========================================================
    */
   const textResponse =
     await groq.chat.completions.create({
@@ -600,17 +605,15 @@ Do not include conversational text.
           role: 'system',
 
           content:
-            'You are a top professional fashion stylist. You create hyper-personalized outfit recommendations. The requested occasion is mandatory: never return a generic outfit.',
+            'You are a top professional fashion stylist. Create a hyper-personalized outfit recommendation. The requested occasion is mandatory.',
         },
 
         {
           role: 'user',
 
-          content: `
-Create a detailed outfit recommendation for a person with the following profile:
+          content: `Create a detailed outfit recommendation for this person.
 
 Photo Analysis:
-
 - Skin Tone: ${photoAnalysis.skinTone}
 - Gender: ${photoAnalysis.gender}
 - Ethnic Appearance: ${photoAnalysis.ethnicAppearance}
@@ -619,98 +622,83 @@ Photo Analysis:
 - Appearance: ${photoAnalysis.appearanceDescription}
 
 Preferences:
-
 - Occasion: ${occasionGuidance.label}
-- Mandatory Occasion Dress Code: ${occasionGuidance.specificity}
+- Dress Code: ${occasionGuidance.specificity}
 - Budget: ${budget}
 - Height: ${height}
 - Age Group: ${age}
 - Body Type: ${bodyType}
 
-IMPORTANT:
+The selected age and body type are mandatory visual requirements.
 
-The selected AGE GROUP and BODY TYPE are mandatory requirements.
-
-The final visual should represent the requested age and body type accurately.
-
-For example:
-
-If age is 60:
-the person must visibly look like an older 60-year-old adult, NOT a young 20-30-year-old.
-
-If body type is plus size:
-the person must visibly have a fuller and broader plus-size physique.
-
-If body type is slim:
-the person must visibly have a lean/slim physique.
-
-If body type is athletic:
-the person must visibly have a muscular/toned athletic physique.
-
-Provide:
-
-1. Complete outfit breakdown.
-2. All visible attire layers and accessories.
+Create:
+1. Complete outfit.
+2. Garments and accessories.
 3. Colors.
 4. Fabric/material.
-5. Texture/finish.
-6. Fit/silhouette.
-7. Small design details.
-8. Why this outfit suits the person's:
-   - body type
-   - height
-   - age
-   - skin tone
-   - ethnic appearance
-   - occasion
-   - budget
-9. Personalized styling tips.
+5. Fit and silhouette.
+6. Why the look suits the person's age, body type, height, skin tone and occasion.
+7. Styling tips.
 
-Respond in JSON:
+Respond ONLY in JSON:
 
 {
-  "outfitName": "Short catchy name",
-  "outfitDescription": "Detailed 6-10 sentence description.",
-  "colorPalette": ["color1", "color2", "color3"],
-  "explanation": "Why this outfit works for this exact person.",
-  "keyPieces": [
-    "piece 1",
-    "piece 2",
-    "piece 3"
-  ],
-  "occasions": [
-    "occasion 1",
-    "occasion 2"
-  ],
-  "stylingTips": [
-    "tip 1",
-    "tip 2",
-    "tip 3"
-  ],
-  "imagePrompt": "Maximum 20 words: main upper garment, lower garment and footwear only."
+  "outfitName": "",
+  "outfitDescription": "",
+  "colorPalette": [],
+  "explanation": "",
+  "keyPieces": [],
+  "occasions": [],
+  "stylingTips": [],
+  "imagePrompt": ""
 }
-`,
+
+IMPORTANT imagePrompt rule:
+imagePrompt must be MAXIMUM 20 WORDS and contain ONLY:
+main upper garment,
+lower garment,
+footwear.
+
+No accessories.
+No camera instructions.
+No framing instructions.
+No age.
+No body type.`,
         },
       ],
 
-      max_tokens: 2600,
+      max_tokens: 1800,
     });
 
-  let outfitRecommendation;
+  let outfitRecommendation =
+    null;
 
   try {
     const rawText =
-      textResponse.choices[0].message.content;
+      textResponse
+        .choices[0]
+        .message
+        .content;
 
     const jsonMatch =
-      rawText.match(/\{[\s\S]*\}/);
+      rawText.match(
+        /\{[\s\S]*\}/
+      );
 
     outfitRecommendation =
       jsonMatch
-        ? JSON.parse(jsonMatch[0])
+        ? JSON.parse(
+            jsonMatch[0]
+          )
         : null;
-  } catch {
-    outfitRecommendation = null;
+  } catch (err) {
+    console.warn(
+      'Failed to parse outfit recommendation:',
+      err?.message || err
+    );
+
+    outfitRecommendation =
+      null;
   }
 
   if (!outfitRecommendation) {
@@ -721,164 +709,149 @@ Respond in JSON:
 
   /*
    * ==========================================================
-   * IMPORTANT AGE + BODY TYPE FIX
+   * STEP 3: NORMALIZE AGE
    * ==========================================================
-   *
-   * Normalize the age.
-   *
-   * This prevents:
-   *
-   * "60"            -> "60-year-old"
-   * "60 year old"   -> "60 year old"
-   * "60 years old"  -> "60 years old"
-   *
-   * from becoming:
-   *
-   * "60 year old-year-old"
    */
   const rawAge =
     String(age || '').trim();
 
   const agePrompt =
     rawAge
-      ? (
-          /year|years|old/i.test(rawAge)
-            ? rawAge
-            : `${rawAge}-year-old`
+      ? /year|years|old/i.test(
+          rawAge
         )
+        ? rawAge
+        : `${rawAge}-year-old`
       : 'adult';
 
   /*
-   * Normalize body type.
+   * ==========================================================
+   * STEP 4: NORMALIZE BODY TYPE
+   * ==========================================================
    */
   const rawBodyType =
     String(bodyType || '')
       .trim()
       .toLowerCase();
 
-  /*
-   * Explicit body type descriptions.
-   *
-   * This is MUCH stronger than simply sending:
-   *
-   * "body type: plus size"
-   *
-   * because the generator gets a visual description.
-   */
   const bodyPromptMap = {
     petite:
-      'petite body type, visibly small and compact frame',
+      'petite',
 
     'plus size':
-      'plus-size body type, visibly full, broad and heavier body frame',
+      'plus-size',
 
     'plus-size':
-      'plus-size body type, visibly full, broad and heavier body frame',
+      'plus-size',
 
     slim:
-      'slim body type, visibly lean, narrow and slender frame',
+      'slim',
 
     athletic:
-      'athletic body type, visibly muscular, toned and fit frame',
+      'athletic',
   };
 
   const bodyPrompt =
-    bodyPromptMap[rawBodyType] ||
-    `${String(
-      bodyType || 'natural'
-    )} body type`;
+    bodyPromptMap[
+      rawBodyType
+    ] ||
+    'natural';
 
   const genderPrompt =
-    photoAnalysis.gender || 'person';
-
-  const ethnicPrompt =
-    photoAnalysis.ethnicAppearance || '';
-
-  const skinPrompt =
-    photoAnalysis.skinTone || 'medium';
-
-  const simpleAppearance =
-    `${agePrompt} ${genderPrompt}, ${bodyPrompt}, ${ethnicPrompt}, ${skinPrompt} skin`;
+    photoAnalysis.gender ||
+    'person';
 
   /*
    * ==========================================================
-   * MOST IMPORTANT PROMPT CHANGE
+   * STEP 5: SHORT POLLINATIONS PROMPT
    * ==========================================================
    *
-   * Age + body type are at the VERY BEGINNING.
+   * KEEP THIS SHORT.
    *
-   * This means Pollinations/Flux sees:
-   *
-   * 60-year-old
-   * plus-size
-   *
-   * BEFORE seeing:
-   *
-   * outfit
-   * background
-   * framing
+   * Age and body type come first because they are the most
+   * important generation requirements.
    */
+  const shortProfile =
+    `${agePrompt} ${genderPrompt}, ${bodyPrompt} body`;
+
+  const outfitImagePrompt =
+    String(
+      outfitRecommendation.imagePrompt ||
+        ''
+    )
+      .replace(
+        /\s+/g,
+        ' '
+      )
+      .trim();
+
   const baseImagePromptParts = [
-    `IMPORTANT PERSON PROFILE: ${agePrompt} ${genderPrompt}. ${bodyPrompt}. The person MUST visibly look approximately this age and MUST visibly have this body type. Do NOT make the person younger, slimmer, thinner, or a different body type.`,
-
-    `AGE REQUIREMENT: ${agePrompt}. This is mandatory. The face and overall physical appearance must look consistent with this age.`,
-
-    `BODY TYPE REQUIREMENT: ${bodyPrompt}. This is mandatory. The actual body proportions and physique must visibly match this body type.`,
-
+    shortProfile,
+    `wearing ${outfitImagePrompt}`,
     FULL_BODY_FRAMING,
-
-    `wearing ${outfitRecommendation.imagePrompt}`,
-
-    'plain studio backdrop',
-
+    'studio background',
     NEGATIVE_INSTRUCTIONS,
   ];
 
+  /*
+   * This produces a short prompt such as:
+   *
+   * 60-year-old male, plus-size body, wearing navy blazer,
+   * white shirt, beige trousers, brown loafers, full body,
+   * head to toe, studio background, fully clothed
+   */
+
+  console.log(
+    'Final Pollinations profile:',
+    shortProfile
+  );
+
   const maxAttempts =
     parseInt(
-      process.env.IMAGE_GEN_MAX_ATTEMPTS || '3',
+      process.env.IMAGE_GEN_MAX_ATTEMPTS ||
+        '3',
       10
     );
 
   const nsfwThreshold =
     parseFloat(
-      process.env.NSFW_THRESHOLD || '0.1'
+      process.env.NSFW_THRESHOLD ||
+        '0.1'
     );
 
   const similarityThreshold =
     parseFloat(
-      process.env.SIMILARITY_THRESHOLD || '0.30'
+      process.env.SIMILARITY_THRESHOLD ||
+        '0.30'
     );
 
-  /*
-   * NEW:
-   * Minimum age/body profile match.
-   */
   const profileMatchThreshold =
     parseFloat(
-      process.env.PROFILE_MATCH_THRESHOLD || '0.65'
+      process.env.PROFILE_MATCH_THRESHOLD ||
+        '0.50'
     );
 
-  let generatedImageUrl = null;
+  let generatedImageUrl =
+    null;
 
-  let generatedImageSrcSet = null;
+  let generatedImageSrcSet =
+    null;
 
   let imageValidation = {
     nsfwProbability: 1,
     similarity: 0,
     fullBody: false,
     profileMatch: 0,
-    explanation: 'not validated',
+    explanation:
+      'not validated',
   };
 
-  /*
-   * Keep the best candidate.
-   */
-  let bestCandidate = null;
+  let bestCandidate =
+    null;
 
   /*
    * ==========================================================
-   * IMAGE GENERATION LOOP
+   * STEP 6: IMAGE GENERATION
    * ==========================================================
    */
   for (
@@ -889,34 +862,32 @@ Respond in JSON:
     try {
       const seed =
         Math.floor(
-          Math.random() * 999999
+          Math.random() *
+            999999
         );
 
       let promptParts =
         [...baseImagePromptParts];
 
       /*
-       * Retry attempts get extra framing instructions.
+       * Retry:
+       * only add a short framing instruction.
+       *
+       * Do NOT add long age/body instructions again.
        */
       if (attempt > 1) {
         promptParts.unshift(
-          'zoomed out wide shot'
-        );
-
-        /*
-         * Repeat the profile on retry so the image generator
-         * does not drift toward a generic young/slim person.
-         */
-        promptParts.unshift(
-          `STRICT PROFILE REPEAT: ${agePrompt}, ${bodyPrompt}`
+          'wide full-body shot'
         );
       }
 
       const fullImagePrompt =
-        promptParts.join(', ');
+        promptParts.join(
+          ', '
+        );
 
       console.log(
-        `Generating image attempt ${attempt}/${maxAttempts}`
+        `Generating Pollinations image attempt ${attempt}/${maxAttempts}`
       );
 
       console.log(
@@ -930,16 +901,13 @@ Respond in JSON:
           seed
         );
 
-      /*
-       * Warm image URL.
-       */
       await warmImageUrl(
         imageResult.url
       );
 
       /*
        * ======================================================
-       * VALIDATE IMAGE
+       * VALIDATION
        * ======================================================
        */
       const validation =
@@ -960,7 +928,9 @@ Respond in JSON:
       );
 
       const candidate = {
-        result: imageResult,
+        result:
+          imageResult,
+
         validation,
       };
 
@@ -969,7 +939,9 @@ Respond in JSON:
         nsfwThreshold;
 
       /*
-       * Keep the strongest candidate.
+       * ALWAYS keep the best generated candidate.
+       *
+       * Profile match affects ranking.
        */
       if (
         !bestCandidate ||
@@ -982,41 +954,51 @@ Respond in JSON:
             nsfwThreshold
           )
       ) {
-        bestCandidate = candidate;
+        bestCandidate =
+          candidate;
       }
 
       /*
-       * ======================================================
-       * ACCEPT IMAGE ONLY IF:
+       * Successful image condition.
        *
-       * 1. Safe
-       * 2. Full body
-       * 3. Outfit matches
-       * 4. Age/body profile matches
-       * ======================================================
+       * Notice:
+       *
+       * profileMatch is NOT a hard blocker.
+       *
+       * This prevents the frontend from getting null just
+       * because the AI validator gave a lower profile score.
        */
       if (
         isSafe &&
         validation.fullBody &&
         validation.similarity >=
-          similarityThreshold &&
-        validation.profileMatch >=
-          profileMatchThreshold
+          similarityThreshold
       ) {
         console.log(
-          `Image accepted on attempt ${attempt}.`
+          `Image accepted on attempt ${attempt}`
         );
 
         break;
       }
 
       console.warn(
-        `Image validation attempt ${attempt} failed: ` +
-        `nsfw=${validation.nsfwProbability}, ` +
-        `similarity=${validation.similarity}, ` +
-        `profileMatch=${validation.profileMatch}, ` +
-        `fullBody=${validation.fullBody}. ` +
-        `Explanation=${validation.explanation}`
+        `Attempt ${attempt} did not meet all quality criteria:`,
+        {
+          nsfw:
+            validation.nsfwProbability,
+
+          similarity:
+            validation.similarity,
+
+          profileMatch:
+            validation.profileMatch,
+
+          fullBody:
+            validation.fullBody,
+
+          explanation:
+            validation.explanation,
+        }
       );
     } catch (imageError) {
       console.error(
@@ -1030,7 +1012,7 @@ Respond in JSON:
 
   /*
    * ==========================================================
-   * CHOOSE BEST CANDIDATE
+   * STEP 7: USE BEST IMAGE
    * ==========================================================
    */
   if (bestCandidate) {
@@ -1046,27 +1028,20 @@ Respond in JSON:
 
   /*
    * ==========================================================
-   * FINAL SAFETY + PROFILE CHECK
+   * STEP 8: SAFETY CHECK
    * ==========================================================
    *
    * IMPORTANT:
    *
-   * Previously, your code could still show a safe but
-   * incorrect image.
+   * We ONLY remove the image for an actual safety failure.
    *
-   * For example:
+   * We do NOT remove it merely because:
+   * - profileMatch is low
+   * - fullBody is imperfect
+   * - similarity is imperfect
    *
-   * Requested:
-   * 60-year-old + plus-size
-   *
-   * Generated:
-   * 25-year-old + slim
-   *
-   * The image could still be returned.
-   *
-   * Now the image is removed if it fails age/body validation.
+   * This prevents "No image available".
    */
-
   if (
     imageValidation.nsfwProbability >
     nsfwThreshold
@@ -1075,48 +1050,62 @@ Respond in JSON:
       'Final generated image failed safety validation.'
     );
 
-    generatedImageUrl = null;
-    generatedImageSrcSet = null;
+    generatedImageUrl =
+      null;
+
+    generatedImageSrcSet =
+      null;
   }
 
-  else if (
-    !imageValidation.fullBody
-  ) {
-    console.warn(
-      'Final generated image failed full-body validation.'
-    );
-
-    generatedImageUrl = null;
-    generatedImageSrcSet = null;
-  }
-
-  else if (
-    imageValidation.similarity <
-    similarityThreshold
-  ) {
-    console.warn(
-      'Final generated image failed outfit similarity validation.'
-    );
-
-    generatedImageUrl = null;
-    generatedImageSrcSet = null;
-  }
-
-  else if (
+  /*
+   * Informational warnings only.
+   */
+  if (
     imageValidation.profileMatch <
     profileMatchThreshold
   ) {
     console.warn(
-      `Final generated image failed age/body profile validation. ` +
-      `Required age=${agePrompt}, ` +
-      `required body=${bodyPrompt}, ` +
-      `profileMatch=${imageValidation.profileMatch}`
+      `Profile match is below preferred threshold: ` +
+        `age=${agePrompt}, ` +
+        `body=${bodyPrompt}, ` +
+        `profileMatch=${imageValidation.profileMatch}`
     );
 
-    generatedImageUrl = null;
-    generatedImageSrcSet = null;
+    /*
+     * IMPORTANT:
+     * Keep generatedImageUrl.
+     */
   }
 
+  if (
+    !imageValidation.fullBody
+  ) {
+    console.warn(
+      'Best image may not be perfectly full body.'
+    );
+  }
+
+  if (
+    imageValidation.similarity <
+    similarityThreshold
+  ) {
+    console.warn(
+      'Best image may not perfectly match outfit.'
+    );
+  }
+
+  /*
+   * ==========================================================
+   * STEP 9: RETURN RESPONSE
+   * ==========================================================
+   *
+   * Multiple aliases are returned so the frontend can safely
+   * use:
+   *
+   * response.generatedImageUrl
+   * response.imageUrl
+   * response.url
+   */
   return {
     success: true,
 
@@ -1126,13 +1115,32 @@ Respond in JSON:
 
     generatedImageUrl,
 
+    imageUrl:
+      generatedImageUrl,
+
+    url:
+      generatedImageUrl,
+
     generatedImageSrcSet,
 
-    photoPath: filename,
+    photoPath:
+      filename,
 
-    referenceImageUrl: uploadedUrl,
+    referenceImageUrl:
+      uploadedUrl,
 
     imageValidation,
+
+    requestedProfile: {
+      age:
+        agePrompt,
+
+      bodyType:
+        bodyPrompt,
+
+      gender:
+        genderPrompt,
+    },
   };
 }
 
@@ -1145,30 +1153,33 @@ router.post(
   '/analyze',
   upload.single('photo'),
   async (req, res) => {
-    /*
-     * Keep Express timeouts reasonable.
-     * Vercel may enforce its own timeout.
-     */
-    req.setTimeout(120000);
-    res.setTimeout(120000);
+    req.setTimeout(
+      120000
+    );
+
+    res.setTimeout(
+      120000
+    );
 
     try {
       if (!req.file) {
         return res.status(400).json({
-          error: 'No photo uploaded',
+          error:
+            'No photo uploaded',
         });
       }
 
       /*
        * ======================================================
-       * ASYNC PROCESSING
+       * ASYNC MODE
        * ======================================================
        */
       if (
         process.env.ASYNC_ANALYZE ===
         'true'
       ) {
-        const jobId = uuidv4();
+        const jobId =
+          uuidv4();
 
         const filePath =
           req.file.path;
@@ -1184,56 +1195,75 @@ router.post(
 
         jobs.set(jobId, {
           status: 'pending',
-          createdAt: Date.now(),
+          createdAt:
+            Date.now(),
         });
 
-        /*
-         * Background processing.
-         */
         (async () => {
           try {
             const hostInfo = {
-              protocol: req.protocol,
-              host: req.get('host'),
+              protocol:
+                req.protocol,
+
+              host:
+                req.get('host'),
             };
 
             const result =
               await processAnalysis({
-                photoPath: filePath,
+                photoPath:
+                  filePath,
+
                 filename,
+
                 mimeType,
+
                 body,
+
                 hostInfo,
               });
 
             jobs.set(jobId, {
-              status: 'completed',
+              status:
+                'completed',
+
               result,
-              completedAt: Date.now(),
+
+              completedAt:
+                Date.now(),
             });
           } catch (err) {
             console.error(
               'Async job failed:',
-              err?.message || err
+              err?.message ||
+                err
             );
 
             jobs.set(jobId, {
-              status: 'failed',
+              status:
+                'failed',
+
               error:
                 err?.message ||
                 String(err),
 
-              completedAt: Date.now(),
+              completedAt:
+                Date.now(),
             });
           }
 
           /*
-           * Delete job after 30 minutes.
+           * Cleanup job after 30 minutes.
            */
           setTimeout(
             () =>
-              jobs.delete(jobId),
-            1000 * 60 * 30
+              jobs.delete(
+                jobId
+              ),
+
+            1000 *
+              60 *
+              30
           );
 
           /*
@@ -1248,32 +1278,45 @@ router.post(
           }
         })();
 
-        return res.status(202).json({
-          jobId,
-        });
+        return res
+          .status(202)
+          .json({
+            jobId,
+          });
       }
 
       /*
        * ======================================================
-       * SYNCHRONOUS PROCESSING
+       * SYNCHRONOUS MODE
        * ======================================================
        */
       const hostInfo = {
-        protocol: req.protocol,
-        host: req.get('host'),
+        protocol:
+          req.protocol,
+
+        host:
+          req.get('host'),
       };
 
       const result =
         await processAnalysis({
-          photoPath: req.file.path,
-          filename: req.file.filename,
-          mimeType: req.file.mimetype,
-          body: req.body,
+          photoPath:
+            req.file.path,
+
+          filename:
+            req.file.filename,
+
+          mimeType:
+            req.file.mimetype,
+
+          body:
+            req.body,
+
           hostInfo,
         });
 
       /*
-       * Remove temporary upload.
+       * Remove uploaded temporary file.
        */
       try {
         fs.unlinkSync(
@@ -1283,18 +1326,22 @@ router.post(
         // Ignore cleanup errors.
       }
 
-      res.json(result);
+      return res.json(
+        result
+      );
     } catch (error) {
       console.error(
         'Analysis error:',
         error
       );
 
-      res.status(500).json({
-        error:
-          error.message ||
-          'Analysis failed',
-      });
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            'Analysis failed',
+        });
     }
   }
 );
@@ -1314,7 +1361,8 @@ router.get(
 
     if (!job) {
       return res.status(404).json({
-        error: 'Job not found',
+        error:
+          'Job not found',
       });
     }
 
@@ -1323,7 +1371,8 @@ router.get(
       'pending'
     ) {
       return res.json({
-        status: 'pending',
+        status:
+          'pending',
       });
     }
 
@@ -1332,14 +1381,20 @@ router.get(
       'failed'
     ) {
       return res.json({
-        status: 'failed',
-        error: job.error,
+        status:
+          'failed',
+
+        error:
+          job.error,
       });
     }
 
     return res.json({
-      status: 'completed',
-      result: job.result,
+      status:
+        'completed',
+
+      result:
+        job.result,
     });
   }
 );
