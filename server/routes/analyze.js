@@ -292,7 +292,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
 // 1. Keep appearance brief so it doesn't waste prompt length or force a face close-up
 const agePrompt = age ? `${age}-year-old ` : '';
 const bodyPrompt = bodyType ? `strictly ${bodyType} body shape` : 'average build';
-const simpleAppearance = `${photoAnalysis.ethnicAppearance || ''} ${photoAnalysis.gender || 'person'}, ${photoAnalysis.skinTone || 'medium'} skin, ${bodyType || 'average'} build`;
+const simpleAppearance = `${photoAnalysis.ethnicAppearance || ''} ${photoAnalysis.gender || 'person'}, ${photoAnalysis.skinTone || 'medium'} skin, ${bodyPrompt}`;
 
 // 2. Put FULL-BODY framing at the VERY FRONT so Flux reads it first before any truncation
 const baseImagePromptParts = [
