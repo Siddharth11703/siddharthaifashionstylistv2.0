@@ -45,7 +45,6 @@ function getFallbackPhotoAnalysis() {
   };
 }
 
-// Reasoning-capable models can emit <think> blocks before the JSON payload.
 function stripReasoning(rawText) {
   return String(rawText || '').replace(/<think>[\s\S]*?<\/think>/gi, '');
 }
@@ -64,244 +63,300 @@ function normalizePreference(value) {
   return String(value || '').trim();
 }
 
-function parseAgeYears(age) {
-  const raw = String(age || '').trim().toLowerCase();
-  if (!raw) return null;
-  const digits = raw.match(/\d{1,3}/);
-  if (digits) return Math.min(100, Math.max(1, parseInt(digits[0], 10)));
-  const words = {
-    teen: 18,
-    teenager: 18,
-    twenty: 20,
-    thirty: 30,
-    forty: 40,
-    fifty: 50,
-    sixty: 60,
-    seventy: 70,
-    eighty: 80,
-    ninety: 90,
+function lower(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function readUserInputs(body = {}) {
+  return {
+    occasion: body.occasion || body.event || '',
+    budget: body.budget || body.budgetRange || '',
+    height: body.height || body.heightGroup || '',
+    age: body.age || body.ageGroup || body.age_group || '',
+    bodyType: body.bodyType || body.body_type || body.bodyShape || body.body_shape || '',
   };
-  for (const [word, years] of Object.entries(words)) {
-    if (raw.includes(word)) return years;
+}
+
+function mapAgeGroup(age) {
+  const raw = lower(age);
+  if (!raw) return { years: null, label: '', phrase: '', visuals: '' };
+
+  if (raw.includes('teen') || raw.includes('13-19') || raw.includes('13–19')) {
+    return {
+      years: 17,
+      label: 'Teen 13-19',
+      phrase: '17-year-old teenager',
+      visuals: 'teenage face, youthful features, young student look, not an adult, not middle-aged, not elderly',
+    };
   }
-  return null;
+  if (raw.includes('young adult') || raw.includes('20-30') || raw.includes('20–30')) {
+    return {
+      years: 25,
+      label: 'Young Adult 20-30',
+      phrase: '25-year-old young adult',
+      visuals: 'young adult 20s face, smooth skin, not a child, not middle-aged, not elderly, no grey hair',
+    };
+  }
+  if (raw.includes('middle') || raw.includes('46-60') || raw.includes('46–60')) {
+    return {
+      years: 52,
+      label: 'Middle Age 46-60',
+      phrase: '52-year-old middle-aged adult',
+      visuals: 'middle-aged face, faint wrinkles, greying temples, 50s look, not a 20-year-old, not a teenager',
+    };
+  }
+  if (raw.includes('senior') || raw.includes('60+') || raw.includes('elderly')) {
+    return {
+      years: 65,
+      label: 'Senior 60+',
+      phrase: '65-year-old elderly senior',
+      visuals: 'elderly face, grey or white hair, deep wrinkles, aged skin, sagging neck, not young, not a 20-year-old',
+    };
+  }
+  if (raw.includes('adult') || raw.includes('31-45') || raw.includes('31–45')) {
+    return {
+      years: 38,
+      label: 'Adult 31-45',
+      phrase: '38-year-old adult',
+      visuals: 'adult 30s-40s face, light maturity, not a teenager, not elderly, no white hair',
+    };
+  }
+
+  const digits = raw.match(/\d{1,3}/);
+  if (digits) {
+    const years = Math.min(80, Math.max(13, parseInt(digits[0], 10)));
+    if (years >= 60) return mapAgeGroup('Senior');
+    if (years >= 46) return mapAgeGroup('Middle Age');
+    if (years >= 31) return mapAgeGroup('Adult');
+    if (years >= 20) return mapAgeGroup('Young Adult');
+    return mapAgeGroup('Teen');
+  }
+
+  return { years: null, label: normalizePreference(age), phrase: normalizePreference(age), visuals: `${normalizePreference(age)} appearance` };
+}
+
+function mapHeight(height) {
+  const raw = lower(height);
+  if (!raw) return { label: '', phrase: '', shortLabel: '' };
+  if (raw.includes('short') || raw.includes('under')) {
+    return { label: 'Short under 5\'4"', phrase: 'short stature, under 5 foot 4, short legs, not tall', shortLabel: 'short' };
+  }
+  if (raw.includes('tall') || raw.includes('above')) {
+    return { label: 'Tall above 5\'9"', phrase: 'tall stature, over 5 foot 9, long legs, not short', shortLabel: 'tall' };
+  }
+  return { label: 'Medium 5\'4"-5\'9"', phrase: 'average medium height, about 5 foot 6', shortLabel: 'medium height' };
+}
+
+function mapBudget(budget) {
+  const raw = lower(budget);
+  if (raw.includes('luxury') || raw.includes('25,000') || raw.includes('25000')) {
+    return { label: 'Luxury ₹25,000+', guidance: 'high-quality realistic luxury pieces a real person would wear, not couture costume' };
+  }
+  if (raw.includes('premium') || raw.includes('8,000') || raw.includes('8000')) {
+    return { label: 'Premium ₹8,000–₹25,000', guidance: 'good quality branded pieces, still a normal wearable outfit' };
+  }
+  if (raw.includes('mid')) {
+    return { label: 'Mid-range ₹2,000–₹8,000', guidance: 'common high-street / Myntra-level outfit, realistic prices' };
+  }
+  return { label: 'Budget under ₹2,000', guidance: 'simple affordable commonly worn pieces, no designer, no rare fabrics' };
+}
+
+function mapBodyType(bodyType) {
+  const raw = lower(bodyType);
+  const label = normalizePreference(bodyType);
+  if (raw.includes('pear')) {
+    return {
+      kind: 'pear',
+      label: label || 'Pear Shape',
+      phrase: 'pear-shaped body, wider hips',
+      visuals: 'narrower shoulders, defined waist, wider hips, fuller thighs, more weight on the lower body, not an inverted triangle, not skinny-straight',
+      fit: 'clothes that skim wider hips on a pear-shaped body',
+    };
+  }
+  if (raw.includes('hourglass') || raw.includes('defined waist')) {
+    return {
+      kind: 'hourglass',
+      label: label || 'Hourglass',
+      phrase: 'hourglass body, defined waist',
+      visuals: 'balanced bust and hips, cinched defined waist, curved figure, not straight, not plus-size bulky',
+      fit: 'clothes that show a defined waist on an hourglass body',
+    };
+  }
+  if (raw.includes('plus') || raw.includes('fuller') || raw.includes('overweight')) {
+    return {
+      kind: 'plus',
+      label: label || 'Plus Size',
+      phrase: 'plus-size fuller-figure body',
+      visuals: 'fuller figure, large round belly, thick waist, wide torso, heavy-set, thick arms and thighs, not slim, not athletic, not a model body',
+      fit: 'relaxed clothes on a plus-size fuller body',
+    };
+  }
+  if (raw.includes('athletic') || raw.includes('muscular') || raw.includes('toned')) {
+    return {
+      kind: 'athletic',
+      label: label || 'Athletic',
+      phrase: 'athletic muscular toned body',
+      visuals: 'broad shoulders, defined biceps, toned chest, visible muscle, strong legs, gym physique, not skinny, not plus-size',
+      fit: 'fitted clothes on a muscular athletic body',
+    };
+  }
+  if (raw.includes('slim') || raw.includes('lean') || raw.includes('slender') || raw.includes('skinny')) {
+    return {
+      kind: 'slim',
+      label: label || 'Slim',
+      phrase: 'slim lean slender body',
+      visuals: 'narrow waist, thin arms, slender legs, flat stomach, skinny frame, not muscular, not plus-size, not bulky',
+      fit: 'slim-fit clothes on a lean slender body',
+    };
+  }
+  if (raw.includes('average') || raw.includes('balanced') || raw.includes('regular') || raw.includes('medium')) {
+    return {
+      kind: 'average',
+      label: label || 'Average',
+      phrase: 'average balanced medium build',
+      visuals: 'regular proportions, neither skinny nor plus-size, typical healthy body, not a bodybuilder',
+      fit: 'regular-fit clothes on an average balanced body',
+    };
+  }
+  if (label) {
+    return {
+      kind: 'other',
+      label,
+      phrase: `${label} body`,
+      visuals: `body type is ${label}, body shape ${label}`,
+      fit: `clothes on a ${label} body`,
+    };
+  }
+  return { kind: '', label: '', phrase: '', visuals: '', fit: '' };
 }
 
 function genderNoun(photoAnalysis) {
-  const raw = String(photoAnalysis?.gender || '').trim().toLowerCase();
-  if (raw === 'female' || raw === 'woman' || raw === 'girl') return 'woman';
-  if (raw === 'male' || raw === 'man' || raw === 'boy') return 'man';
+  const raw = lower(photoAnalysis?.gender);
+  if (['female', 'woman', 'girl', 'lady', 'women'].includes(raw)) return 'woman';
+  if (['male', 'man', 'boy', 'men', 'gentleman'].includes(raw)) return 'man';
+  const blob = lower(
+    `${photoAnalysis?.hairDescription} ${photoAnalysis?.faceDescription} ${photoAnalysis?.appearanceDescription} ${photoAnalysis?.styleFeatures}`,
+  );
+  if (/(beard|stubble|moustache|mustache|goatee)/.test(blob)) return 'man';
+  if (/(woman|female|lipstick)/.test(blob)) return 'woman';
   return 'person';
 }
 
-function classifyBodyType(bodyType) {
-  const key = String(bodyType || '').trim().toLowerCase();
-  if (!key) return '';
-  const isPlus = /(plus\s*size|plus-size|overweight|heavy|chubby|fat)/.test(key);
-  const isPetite = key.includes('petite');
-  const isAthletic = /(athletic|muscular|sporty)/.test(key) || /\bfit\b/.test(key);
-  const isSlim = /(slim|thin|lean|skinny)/.test(key);
-  const isCurvy = /(curvy|hourglass)/.test(key);
-  const isAverage = /(average|regular|medium|normal|standard)/.test(key);
-  if (isPlus && isPetite) return 'petite-plus';
-  if (isPlus) return 'plus';
-  if (isPetite) return 'petite';
-  if (isAthletic) return 'athletic';
-  if (isSlim) return 'slim';
-  if (isCurvy) return 'curvy';
-  if (isAverage) return 'average';
-  return 'other';
+function ageAdjustHair(hair, ageLook) {
+  const h = normalizePreference(hair);
+  if (ageLook.years >= 60) {
+    if (!h) return 'grey hair';
+    if (/grey|gray|white|silver/.test(lower(h))) return h;
+    return `greying ${h}`;
+  }
+  return h;
 }
 
-function buildAgeLook(age) {
-  const years = parseAgeYears(age);
-  const raw = normalizePreference(age);
-  if (years >= 60) {
-    return {
-      years,
-      label: `${years}-year-old`,
-      phrase: `${years}-year-old elderly senior`,
-      visuals: 'grey or white hair, deep wrinkles, aged skin, sagging neck, older adult face, not young, not a 20-year-old, not a 30-year-old',
-    };
-  }
-  if (years >= 50) {
-    return {
-      years,
-      label: `${years}-year-old`,
-      phrase: `${years}-year-old older adult`,
-      visuals: 'greying hair, mature wrinkled face, 50s appearance, not a young 20-year-old',
-    };
-  }
-  if (years >= 40) {
-    return {
-      years,
-      label: `${years}-year-old`,
-      phrase: `${years}-year-old middle-aged adult`,
-      visuals: 'mature 40s face, faint wrinkles, not a teenager, not elderly, not grey-haired',
-    };
-  }
-  if (years >= 30) {
-    return {
-      years,
-      label: `${years}-year-old`,
-      phrase: `${years}-year-old adult`,
-      visuals: '30s adult face, smooth-to-light mature skin, not a teenager, not elderly, no grey hair',
-    };
-  }
-  if (years) {
-    return {
-      years,
-      label: `${years}-year-old`,
-      phrase: `${years}-year-old young adult`,
-      visuals: 'youthful face, smooth skin, young appearance, not middle-aged, not elderly, no grey hair, no wrinkles',
-    };
-  }
-  if (raw) {
-    return { years: null, label: raw, phrase: raw, visuals: `${raw} facial appearance` };
-  }
-  return { years: null, label: '', phrase: '', visuals: '' };
-}
-
-function buildBodyLook(bodyType) {
-  const kind = classifyBodyType(bodyType);
-  const raw = normalizePreference(bodyType);
-  const looks = {
-    slim: {
-      phrase: 'slim skinny thin body',
-      visuals: 'narrow waist, thin arms, slender legs, flat stomach, low body weight, skinny frame, not muscular, not bulky, not plus-size, not overweight',
-      fit: 'slim-fit clothes on a thin body',
-    },
-    athletic: {
-      phrase: 'athletic muscular fit body',
-      visuals: 'broad shoulders, defined biceps, toned chest, visible muscle, strong legs, gym physique, V-taper, not skinny, not plus-size, not overweight',
-      fit: 'fitted clothes on a muscular athletic body',
-    },
-    plus: {
-      phrase: 'plus-size overweight heavy body',
-      visuals: 'large round belly, thick waist, wide torso, heavy-set figure, thick arms and thighs, double chin, not slim, not skinny, not athletic',
-      fit: 'relaxed clothes on a plus-size heavy body',
-    },
-    petite: {
-      phrase: 'petite short small-frame body',
-      visuals: 'short stature, small bone structure, compact proportions, short legs, not tall, not plus-size',
-      fit: 'clothes scaled to a petite short body',
-    },
-    'petite-plus': {
-      phrase: 'petite plus-size short heavy body',
-      visuals: 'short stature, round belly, full figure, thick waist, not tall, not slim',
-      fit: 'clothes on a short plus-size body',
-    },
-    curvy: {
-      phrase: 'curvy hourglass body',
-      visuals: 'full hips, defined waist, rounded figure, not skinny, not a bodybuilder',
-      fit: 'clothes on a curvy hourglass body',
-    },
-    average: {
-      phrase: 'average regular medium build',
-      visuals: 'neither skinny nor overweight, regular proportions, typical healthy body',
-      fit: 'regular-fit clothes on an average body',
-    },
-    other: {
-      phrase: raw ? `${raw} body` : '',
-      visuals: raw ? `body shape is ${raw}, body type ${raw}` : '',
-      fit: raw ? `clothes on a ${raw} body` : '',
-    },
-    '': {
-      phrase: '',
-      visuals: '',
-      fit: '',
-    },
-  };
-  return { kind, raw, ...(looks[kind] || looks.other) };
-}
-
-// Age and body type are independent. Whatever the user picked (slim, athletic,
-// petite, plus-size, 20 / 30 / 60, etc.) is locked into the subject line.
-function buildPersonPrompt({ age, bodyType, photoAnalysis, height }) {
+function buildPersonPrompt({ age, bodyType, height, photoAnalysis }) {
   const gender = genderNoun(photoAnalysis);
-  const ageLook = buildAgeLook(age);
-  const bodyLook = buildBodyLook(bodyType);
-  const heightBit = normalizePreference(height) ? `${normalizePreference(height)} tall, ` : '';
+  const ageLook = mapAgeGroup(age);
+  const bodyLook = mapBodyType(bodyType);
+  const heightLook = mapHeight(height);
   const ethnicity = photoAnalysis?.ethnicAppearance || '';
   const skin = photoAnalysis?.skinTone ? `${photoAnalysis.skinTone} skin` : '';
+  const hair = ageAdjustHair(photoAnalysis?.hairDescription, ageLook);
+  const face = normalizePreference(photoAnalysis?.faceDescription);
 
-  const subject = [bodyLook.phrase, ageLook.phrase, gender].filter(Boolean).join(' ');
+  const subject = [bodyLook.phrase, heightLook.shortLabel, ageLook.phrase, gender].filter(Boolean).join(' ');
   const lock = [
-    ageLook.label ? `age ${ageLook.label}` : '',
-    bodyLook.raw ? `body type ${bodyLook.raw}` : '',
+    ageLook.label ? `age group ${ageLook.label}` : '',
+    bodyLook.label ? `body type ${bodyLook.label}` : '',
+    heightLook.label ? `height ${heightLook.label}` : '',
+    gender !== 'person' ? `gender ${gender}` : '',
   ].filter(Boolean).join(', ');
 
-  const appearance = [subject, lock, heightBit + bodyLook.visuals, ageLook.visuals, ethnicity, skin]
-    .filter(Boolean)
-    .join(', ');
+  const likeness = [hair, face, ethnicity, skin].filter(Boolean).join(', ');
+  const details = [bodyLook.visuals, heightLook.phrase, ageLook.visuals, likeness].filter(Boolean).join(', ');
 
   return {
-    appearance,
     subject,
     lock,
-    details: [bodyLook.visuals, ageLook.visuals].filter(Boolean).join(', '),
+    details,
     fit: bodyLook.fit,
     kind: bodyLook.kind,
+    gender,
     expectedAgeLabel: ageLook.label,
-    expectedBodyLabel: bodyLook.raw,
+    expectedBodyLabel: bodyLook.label,
+    expectedGender: gender,
+    expectedHeight: heightLook.label,
   };
 }
 
 function buildOccasionGuidance(occasion) {
   const normalizedOccasion = normalizePreference(occasion);
-  const key = normalizedOccasion.toLowerCase();
+  const key = lower(normalizedOccasion);
 
   const rules = [
     {
-      matches: ['wedding', 'marriage', 'bridal', 'bride', 'groom', 'sangeet', 'mehendi', 'reception', 'haldi'],
-      guidance: 'formal wedding guest attire, festive ceremonial clothing, elegant premium fabrics, dressy silhouettes, refined jewellery/accessories, polished shoes; absolutely not casual, offic[...]',
+      matches: ['wedding', 'marriage', 'bridal', 'bride', 'groom', 'sangeet', 'mehendi', 'mehndi', 'reception', 'haldi'],
+      guidance: 'festive wedding-guest clothing people actually wear: dressy ethnic or formal, polished shoes, tasteful jewellery. Not casual jeans, not gymwear, not office formals unless it is a court wedding.',
     },
     {
-      matches: ['party', 'club', 'birthday', 'celebration'],
-      guidance: 'party-ready statement outfit with elevated fabrics, stylish evening details, confident accessories, and event-appropriate shoes; avoid basic daytime casual wear',
+      matches: ['party', 'club', 'birthday', 'celebration', 'night out'],
+      guidance: 'a common party outfit for this age and budget: one statement piece, normal shoes, light accessories. Not a celebrity red-carpet look.',
     },
     {
       matches: ['interview', 'office', 'business', 'corporate', 'meeting', 'work'],
-      guidance: 'professional polished business attire with structured pieces, modest fit, refined shoes, and minimal accessories; avoid partywear, loungewear, and overly casual items',
+      guidance: 'normal office/interview clothes: shirt or blouse, trousers or formal bottom, clean shoes. Not partywear, not loungewear.',
     },
     {
       matches: ['date', 'dinner', 'romantic'],
-      guidance: 'smart romantic dinner/date attire, flattering elevated pieces, tasteful accessories, and polished footwear; avoid gymwear and basic everyday clothing',
+      guidance: 'smart casual date/dinner clothes, neat and flattering, common pieces. Not gymwear, not a tuxedo unless asked.',
     },
     {
       matches: ['gym', 'workout', 'fitness', 'sport'],
-      guidance: 'performance athletic outfit with breathable technical fabrics, supportive trainers, and sport-ready layering; avoid formalwear and delicate accessories',
+      guidance: 'normal gym clothes: t-shirt or tank, joggers or shorts, trainers. Not formalwear.',
     },
     {
-      matches: ['festival', 'festive', 'diwali', 'eid', 'christmas', 'puja'],
-      guidance: 'festive celebratory attire with rich colors, dressy details, culturally appropriate elements, accessories, and polished footwear; avoid plain casual clothing',
+      matches: ['beach', 'vacation', 'holiday', 'travel'],
+      guidance: 'common vacation/beach clothes for the climate: breathable separates, sandals or trainers. Not a wedding outfit.',
+    },
+    {
+      matches: ['festival', 'festive', 'diwali', 'eid', 'christmas', 'puja', 'navratri', 'onam', 'pongal'],
+      guidance: 'common festive clothes for this culture and budget: dressy ethnic or smart festive western, not plain gym clothes.',
+    },
+    {
+      matches: ['casual', 'daily', 'everyday', 'college', 'campus'],
+      guidance: 'everyday casual clothes: jeans or simple bottom, plain top, common sneakers. Not formal, not party.',
     },
   ];
 
   const matchedRule = rules.find((rule) => rule.matches.some((term) => key.includes(term)));
-  const specificity = matchedRule ? matchedRule.guidance : `clearly ${normalizedOccasion || 'the requested occasion'}-appropriate styling with no generic casual outfit unless the occasion itself [...]`;
-
   return {
-    label: normalizedOccasion || 'the requested occasion',
-    specificity,
+    label: normalizedOccasion || 'everyday',
+    specificity: matchedRule
+      ? matchedRule.guidance
+      : `a realistic commonly worn outfit for ${normalizedOccasion || 'the stated occasion'}, not a generic random look`,
   };
 }
 
 const NEGATIVE_INSTRUCTIONS = 'fully clothed, uncropped';
 const FULL_BODY_FRAMING = 'full body photo, head to toe, shoes and floor visible';
 
-function buildFluxPrompt(personPrompt, outfitPrompt, { repeatBody = false } = {}) {
+function garmentsForImage(rec) {
+  const pieces = Array.isArray(rec?.keyPieces) ? rec.keyPieces.map((p) => String(p || '').trim()).filter(Boolean) : [];
+  if (pieces.length) return pieces.slice(0, 6).join(', ');
+  if (rec?.imagePrompt) return String(rec.imagePrompt).trim();
+  return 'simple occasion-appropriate outfit';
+}
+
+function buildFluxPrompt(personPrompt, garmentList, { repeat = false } = {}) {
   const parts = [
     FULL_BODY_FRAMING,
     personPrompt.subject,
     personPrompt.lock,
     personPrompt.details,
   ];
-  if (repeatBody && personPrompt.subject) {
+  if (repeat) {
     parts.push(personPrompt.subject);
     parts.push(personPrompt.lock);
   }
-  parts.push(`wearing ${outfitPrompt}${personPrompt.fit ? `, ${personPrompt.fit}` : ''}`);
+  parts.push(`wearing ${garmentList}${personPrompt.fit ? `, ${personPrompt.fit}` : ''}`);
   parts.push('plain studio backdrop');
   parts.push(NEGATIVE_INSTRUCTIONS);
   return parts.filter(Boolean).join(', ');
@@ -310,6 +365,7 @@ function buildFluxPrompt(personPrompt, outfitPrompt, { repeatBody = false } = {}
 async function validateImageWithGroq(groqClient, imageUrl, outfitText, personPrompt = {}) {
   const expectedAge = personPrompt.expectedAgeLabel || '';
   const expectedBody = personPrompt.expectedBodyLabel || '';
+  const expectedGender = personPrompt.expectedGender || '';
   const bodyKind = personPrompt.kind || '';
   try {
     const response = await groqClient.chat.completions.create({
@@ -318,34 +374,31 @@ async function validateImageWithGroq(groqClient, imageUrl, outfitText, personPro
         {
           role: 'user',
           content: [
-            {
-              type: 'image_url',
-              image_url: { url: imageUrl },
-            },
+            { type: 'image_url', image_url: { url: imageUrl } },
             {
               type: 'text',
-              text: `You are an image validation assistant. Analyze the provided image. Respond ONLY in strict JSON: {"nsfwProbability": number, "similarity": number, "fullBody": boolean, "ageMatch": boolean, "bodyTypeMatch": boolean, "explanation": string}.
+              text: `Validate this fashion photo. JSON only: {"nsfwProbability":number,"similarity":number,"fullBody":boolean,"ageMatch":boolean,"bodyTypeMatch":boolean,"genderMatch":boolean,"outfitMatch":boolean,"explanation":string}
 
-Outfit: ${outfitText}
-Required age: ${expectedAge || 'any'}
+Required gender: ${expectedGender || 'any'}
+Required age group: ${expectedAge || 'any'}
 Required body type: ${expectedBody || 'any'} (${bodyKind || 'unspecified'})
+Outfit that MUST be visible: ${outfitText}
 
 Rules:
-1) nsfwProbability: 0-1, nudity/underwear/sexual content.
-2) similarity: 0-1, outfit match.
-3) fullBody: true only if head-to-shoes, both feet visible.
-4) ageMatch: true ONLY if apparent age matches the required age.
-   - 20s must look young. Grey hair or an elderly face is FALSE.
-   - 30s must look like a 30-year-old adult, not a teen and not 60.
-   - 50s/60s MUST look older: wrinkles and aged face. A 20-year-old model is FALSE.
-5) bodyTypeMatch: true ONLY if the body matches the required type. Be STRICT for every type, not only plus-size.
-   - slim: thin/skinny/lean. Muscular gym body or plus-size is FALSE.
-   - athletic: muscular/toned/gym body. Skinny or plus-size is FALSE.
-   - petite: short small frame.
-   - plus-size / overweight: large belly, thick waist, heavy-set. Slim or athletic is FALSE.
-   - average/regular: neither skinny nor plus-size.
-   - any other label: the visible body must match that label.
-6) explanation: say the age and body you actually see vs what was required.
+1) nsfwProbability 0-1.
+2) similarity 0-1 how well clothes match the outfit list.
+3) fullBody true only if head-to-shoes, both feet visible.
+4) genderMatch true only if the person is the required gender. A woman is FALSE if required is man, and vice versa.
+5) ageMatch true only if apparent age matches the age group (Teen 13-19, Young Adult 20-30, Adult 31-45, Middle Age 46-60, Senior 60+). A 20-year-old model is FALSE for Middle Age or Senior. An elderly face is FALSE for Teen or Young Adult.
+6) bodyTypeMatch true only if the body matches:
+   - Slim: lean/slender/thin. Muscular or plus-size is FALSE.
+   - Athletic: muscular/toned. Skinny or plus-size is FALSE.
+   - Average: balanced, neither skinny nor plus-size.
+   - Plus Size: fuller figure, larger midsection. Slim or athletic is FALSE.
+   - Pear Shape: wider hips than shoulders.
+   - Hourglass: defined waist, balanced hips and bust.
+7) outfitMatch true only if the visible clothes are the listed outfit, not a different look.
+8) explanation: gender, age, body, and clothes you actually see.
 
 JSON only.`,
             },
@@ -360,8 +413,7 @@ JSON only.`,
     const raw = response.choices[0].message.content;
     const match = stripReasoning(raw).match(/\{[\s\S]*\}/);
     if (!match) {
-      console.warn('Validator failed to return JSON. Skipping validation. Raw:', raw);
-      return { nsfwProbability: 0, similarity: 1.0, fullBody: true, ageMatch: true, bodyTypeMatch: true, explanation: 'Validation bypassed' };
+      return { nsfwProbability: 0, similarity: 1, fullBody: true, ageMatch: true, bodyTypeMatch: true, genderMatch: true, outfitMatch: true, explanation: 'Validation bypassed' };
     }
     const parsed = JSON.parse(match[0]);
     return {
@@ -370,11 +422,13 @@ JSON only.`,
       fullBody: parsed.fullBody !== false,
       ageMatch: expectedAge ? parsed.ageMatch === true : true,
       bodyTypeMatch: expectedBody ? parsed.bodyTypeMatch === true : true,
+      genderMatch: expectedGender && expectedGender !== 'person' ? parsed.genderMatch === true : true,
+      outfitMatch: parsed.outfitMatch !== false,
       explanation: String(parsed.explanation || ''),
     };
   } catch (err) {
     console.warn('Image validation failed:', err?.message || err);
-    return { nsfwProbability: 0, similarity: 1.0, fullBody: true, ageMatch: true, bodyTypeMatch: true, explanation: 'Validation service error bypassed' };
+    return { nsfwProbability: 0, similarity: 1, fullBody: true, ageMatch: true, bodyTypeMatch: true, genderMatch: true, outfitMatch: true, explanation: 'Validation service error bypassed' };
   }
 }
 
@@ -389,29 +443,23 @@ async function fetchImageAsDataUrl(url, timeoutMs = 30000) {
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
-
   const widths = [576, 768, 1024];
   const srcParts = widths.map((w) => {
     const h = Math.round((w * 3) / 2);
     return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
   });
-
-  const defaultWidth = 1024;
-  const defaultHeight = 1536;
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${defaultWidth}&height=${defaultHeight}&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
-
-  return {
-    url: defaultUrl,
-    srcset: srcParts.join(', '),
-  };
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
+  return { url: defaultUrl, srcset: srcParts.join(', ') };
 }
 
 function scoreCandidate({ validation }, nsfwThreshold) {
   const safe = validation.nsfwProbability <= nsfwThreshold ? 1 : 0;
   return (
     safe * 100 +
-    (validation.bodyTypeMatch ? 25 : 0) +
-    (validation.ageMatch ? 25 : 0) +
+    (validation.genderMatch ? 20 : 0) +
+    (validation.bodyTypeMatch ? 20 : 0) +
+    (validation.ageMatch ? 20 : 0) +
+    (validation.outfitMatch ? 15 : 0) +
     (validation.fullBody ? 10 : 0) +
     validation.similarity
   );
@@ -432,14 +480,17 @@ async function generateAndValidateCandidate(groq, prompt, seed, outfitText, pers
 const jobs = new Map();
 
 async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }) {
-  const { occasion, budget, height, age, bodyType } = body || {};
+  const inputs = readUserInputs(body);
+  const { occasion, budget, height, age, bodyType } = inputs;
   const occasionGuidance = buildOccasionGuidance(occasion);
+  const budgetInfo = mapBudget(budget);
+  const heightInfo = mapHeight(height);
+  const ageInfo = mapAgeGroup(age);
+  const bodyInfo = mapBodyType(bodyType);
 
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
   const photoData = fs.readFileSync(photoPath);
   const base64Photo = photoData.toString('base64');
-
   const uploadedUrl = `${hostInfo.protocol}://${hostInfo.host}/uploads/${filename}`;
 
   let photoAnalysis = getFallbackPhotoAnalysis();
@@ -450,57 +501,107 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
         {
           role: 'user',
           content: [
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Photo}` } },
             {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Photo}`,
-              },
+              type: 'text',
+              text: `Analyze this photo for a fashion avatar that must LOOK LIKE this same person.
+
+Return ONLY JSON:
+{
+  "skinTone": "exact skin tone",
+  "gender": "male or female",
+  "hairDescription": "color, length, texture",
+  "faceDescription": "key facial features",
+  "ethnicAppearance": "South Asian / East Asian / Black / Hispanic / Middle Eastern / White / Mixed",
+  "appearanceDescription": "one sentence",
+  "styleFeatures": "visible current clothes/style"
+}
+
+Gender rules:
+- Return exactly "male" or "female". Do not return "neutral" unless the face is fully hidden.
+- Beard, stubble, moustache, or Adam's apple => male.
+- Clearly feminine face/makeup/body => female.
+- Do not flip gender.
+
+JSON only. No markdown.`,
             },
-          {
-            type: 'text',
-            text: `Carefully analyze this person's photo and extract detailed physical appearance information to be used for generating a hyper-realistic AI fashion image that looks like THIS \n\n 1. skinTone: exact skin tone (e.g., "warm fair", "medium olive", "rich dark brown", "cool light beige") \n 2. gender: male/female/neutral \n 3. hairDescription: hair color, length, texture (e.g., "short black curly hair", "long straight brown hair") \n 4. faceDescription: key facial features (e.g., "round face with brown eyes", "sharp jawline with dark eyes", "high cheekbones") \n 5. ethnicAppearance: apparent ethnic appearance for realistic generation (e.g., "South Asian", "East Asian", "Black", "Hispanic", "Middle Eastern", "White/Caucasian", "Mixed") \n 6. appearanceDescription: 1-sentence holistic description \n 7. styleFeatures: any current style elements visible \n\n Respond ONLY in valid JSON: \n {\n "skinTone": "", \n "gender": "", \n "hairDescription": "", \n "faceDescription": "", \n "ethnicAppearance": "", \n "appearanceDescription": "", \n "styleFeatures": "" \n }\n\n IMPORTANT: You must return ONLY a raw, valid JSON object. Do not include markdown blocks (like \`\`\`json). Do not include any conversational text.`,
-          },
           ],
         },
       ],
       reasoning_effort: 'none',
-      max_tokens: 800,
+      max_tokens: 600,
       response_format: { type: 'json_object' },
     });
-
     photoAnalysis = parsePhotoAnalysis(visionResponse.choices[0].message.content);
   } catch (visionError) {
     console.warn(`Vision analysis failed with model ${GROQ_VISION_MODEL}:`, visionError.message);
   }
 
-  const personPrompt = buildPersonPrompt({ age, bodyType, photoAnalysis, height });
-  const bodyFitByKind = {
-    plus: 'Garment fit MUST be relaxed/roomy on a plus-size body (no slim-fit).',
-    'petite-plus': 'Garment fit MUST suit a short plus-size body.',
-    slim: 'Garment fit MUST be slim-fit on a thin body (no baggy, no muscular cut).',
-    athletic: 'Garment fit MUST be tailored on a muscular athletic body.',
-    petite: 'Garment fit MUST suit a petite short frame.',
-    curvy: 'Garment fit MUST suit a curvy hourglass body.',
-    average: 'Garment fit MUST be regular-fit on an average medium body.',
-    other: `Garment fit MUST match a ${bodyType || 'typical'} body.`,
-  };
-  const bodyFitInstruction = bodyFitByKind[personPrompt.kind] || bodyFitByKind.other;
+  const personPrompt = buildPersonPrompt({ age, bodyType, height, photoAnalysis });
+  const gender = personPrompt.gender;
+  const genderClothes =
+    gender === 'man'
+      ? 'MENSWEAR only: shirt, kurta, trousers, jeans, jacket, sneakers or formal shoes. Never a dress, saree, lehenga, skirt, heels, or blouse.'
+      : gender === 'woman'
+        ? 'WOMENSWEAR appropriate to the occasion: could be western or ethnic. Never mens-only tailoring that ignores that this is a woman.'
+        : 'Choose clothing that matches the person in the photo. Do not guess the opposite gender.';
+
+  const ageClothes =
+    ageInfo.years && ageInfo.years < 20
+      ? 'Age-appropriate modest teen clothing. No sexy clubwear, no lingerie styling, fully covered.'
+      : ageInfo.years && ageInfo.years >= 60
+        ? 'Mature senior clothing. Not youth streetwear, not crop tops, not teen fashion.'
+        : 'Clothing that a real person of this age group would actually wear.';
 
   const textResponse = await groq.chat.completions.create({
     model: GROQ_TEXT_MODEL,
     messages: [
       {
         role: 'system',
-        content: 'You are Siddharth, a top professional fashion stylist. You create hyper-personalized outfit recommendations. The requested occasion is mandatory: never return a generic outfit[...]',
+        content: `You are a practical stylist for real people in India and worldwide. Recommend COMMON outfits people actually wear and buy — not runway, not celebrity editorial, not fantasy.
+
+Hard rules:
+1) Occasion is mandatory.
+2) Budget is mandatory. Cheap budget = simple common pieces.
+3) Gender is mandatory. ${genderClothes}
+4) Age is mandatory. ${ageClothes}
+5) Body type changes FIT, not the occasion. Plus-size gets relaxed common clothes. Slim gets slim-fit common clothes. Athletic gets fitted common clothes. Pear gets hip-friendly cuts. Hourglass gets a defined waist. Average gets regular fit.
+6) keyPieces and imagePrompt MUST be the SAME garments in the SAME order. imagePrompt is only those garments (color + item), comma-separated, no camera words.
+7) Every look is fully clothed, head to toe, with real shoes.`,
       },
       {
         role: 'user',
-        content: `Create a detailed outfit recommendation for a person with the following profile:\n\nPhoto Analysis:\n- Skin Tone: ${photoAnalysis.skinTone}\n- Gender: ${photoAnalysis.gender}\n- Ethnic Appearance: ${photoAnalysis.ethnicAppearance}\n- Hair: ${photoAnalysis.hairDescription}\n- Face: ${photoAnalysis.faceDescription}\n- Appearance: ${photoAnalysis.appearanceDescription}\n\nPreferences:\n- Occasion: ${occasionGuidance.label}\n- Mandatory Occasion Dress Code: ${occasionGuidance.specificity}\n- Budget: ${budget}\n- Height: ${height}\n- Age Group: ${age}\n- Body Type: ${bodyType}\n- Body-type fit rule: ${bodyFitInstruction || 'match the stated body type'}\n\nProvide:\n1. A complete, elaborative outfit breakdown that is specific to the occasion and budget.\n2. Mention every visible attire layer and accessory: primary garment, inner/outer layers, bottoms, footwear, socks/hosiery if applicable, belt or waist detail, watch, jewellery, bag/clutch/backpa[...]\n3. For each item, include color, fabric/material, texture/finish, fit/silhouette, and small design details.\n4. Why this outfit suits their appearance, body type, skin tone, ethnic appearance, and the exact occasion dress code.\n5. Styling tips personalized to their look.\n\nRespond in JSON:\n{\n  "outfitName": "Short catchy name",\n  "outfitDescription": "Elaborative 6-10 sentence outfit description. Describe the full look from head to toe. Explicitly include all clothing layers and accessories with colors, fabrics/material[...]\n  "colorPalette": ["array of 3-6 color names used in the outfit, e.g. Terracotta"],\n  "explanation": "Why this full attire works for this person specifically, including body type, height, age group, skin tone, ethnic appearance, budget, and occasion",\n  "keyPieces": ["array of 5-8 short strings, one per garment/accessory, e.g. Charcoal linen blazer"],
-  "occasions": ["array of 2-4 short strings naming events this look suits"],
-  "stylingTips": ["array of 3-5 personalized styling tips, including how to place or pair accessories"],\n  "imagePrompt": "Max 16 words: colour + fit + garment for upper layer, lower garment, footwear. Fit must match body type. Garments only."\n}`,
+        content: `Create one realistic outfit for this person.
+
+Person from photo:
+- Gender: ${gender}
+- Skin: ${photoAnalysis.skinTone}
+- Ethnicity: ${photoAnalysis.ethnicAppearance}
+- Hair: ${photoAnalysis.hairDescription}
+- Face: ${photoAnalysis.faceDescription}
+
+User selections (must all be respected):
+- Occasion: ${occasionGuidance.label}
+- Dress code: ${occasionGuidance.specificity}
+- Budget: ${budgetInfo.label}. ${budgetInfo.guidance}
+- Height: ${heightInfo.label}
+- Age group: ${ageInfo.label}
+- Body type: ${bodyInfo.label}. ${bodyInfo.visuals}
+
+Return JSON:
+{
+  "outfitName": "short plain name",
+  "outfitDescription": "6-8 sentences, head to toe, the exact common outfit. Same garments as keyPieces.",
+  "colorPalette": ["3-6 color names"],
+  "explanation": "why this common outfit fits this gender, age, body, budget, height, and occasion",
+  "keyPieces": ["color + garment", "color + garment", "color + bottom", "color + shoes", "1-2 accessories"],
+  "occasions": ["2-4 matching events"],
+  "stylingTips": ["3 practical tips"],
+  "imagePrompt": "comma-separated copy of keyPieces only"
+}`,
       },
     ],
-    max_tokens: 1800,
+    max_tokens: 1600,
   });
 
   let outfitRecommendation;
@@ -516,81 +617,77 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
     throw new Error('Failed to generate outfit recommendation');
   }
 
+  const garmentList = garmentsForImage(outfitRecommendation);
+  outfitRecommendation.imagePrompt = garmentList;
+
   const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
   const similarityThreshold = parseFloat(process.env.SIMILARITY_THRESHOLD || '0.30');
   const parallelCount = Math.min(2, Math.max(1, parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '2', 10)));
 
-  const outfitText = `${outfitRecommendation.outfitName}: ${outfitRecommendation.outfitDescription}`;
-  const promptA = buildFluxPrompt(personPrompt, outfitRecommendation.imagePrompt, { repeatBody: false });
-  const promptB = buildFluxPrompt(personPrompt, outfitRecommendation.imagePrompt, { repeatBody: true });
+  const outfitText = `${outfitRecommendation.outfitName}: ${garmentList}. ${outfitRecommendation.outfitDescription || ''}`;
+  const promptA = buildFluxPrompt(personPrompt, garmentList, { repeat: false });
+  const promptB = buildFluxPrompt(personPrompt, garmentList, { repeat: true });
 
   const tasks = [
-    generateAndValidateCandidate(
-      groq,
-      promptA,
-      Math.floor(Math.random() * 999999),
-      outfitText,
-      personPrompt,
-      nsfwThreshold,
-    ),
+    generateAndValidateCandidate(groq, promptA, Math.floor(Math.random() * 999999), outfitText, personPrompt, nsfwThreshold),
   ];
   if (parallelCount > 1) {
     tasks.push(
-      generateAndValidateCandidate(
-        groq,
-        promptB,
-        Math.floor(Math.random() * 999999),
-        outfitText,
-        personPrompt,
-        nsfwThreshold,
-      ),
+      generateAndValidateCandidate(groq, promptB, Math.floor(Math.random() * 999999), outfitText, personPrompt, nsfwThreshold),
     );
   }
 
   const settled = await Promise.allSettled(tasks);
-  const candidates = settled
-    .filter((item) => item.status === 'fulfilled')
-    .map((item) => item.value);
-
-  if (settled.some((item) => item.status === 'rejected')) {
-    settled.forEach((item, i) => {
-      if (item.status === 'rejected') {
-        console.error('Image generation error on candidate', i + 1, item.reason?.message || item.reason);
-      }
-    });
-  }
+  const candidates = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
+  settled.forEach((item, i) => {
+    if (item.status === 'rejected') {
+      console.error('Image generation error on candidate', i + 1, item.reason?.message || item.reason);
+    }
+  });
 
   let bestCandidate = null;
   for (const candidate of candidates) {
-    if (!bestCandidate || candidate.score > bestCandidate.score) {
-      bestCandidate = candidate;
-    }
+    if (!bestCandidate || candidate.score > bestCandidate.score) bestCandidate = candidate;
   }
 
   let generatedImageUrl = null;
   let generatedImageSrcSet = null;
-  let imageValidation = { nsfwProbability: 1, similarity: 0, fullBody: false, ageMatch: false, bodyTypeMatch: false, explanation: 'not validated' };
+  let imageValidation = {
+    nsfwProbability: 1,
+    similarity: 0,
+    fullBody: false,
+    ageMatch: false,
+    bodyTypeMatch: false,
+    genderMatch: false,
+    outfitMatch: false,
+    explanation: 'not validated',
+  };
 
   if (bestCandidate) {
     generatedImageUrl = bestCandidate.result.url;
     generatedImageSrcSet = bestCandidate.result.srcset;
     imageValidation = bestCandidate.validation;
     console.warn(
-      `Picked image candidate: nsfw=${imageValidation.nsfwProbability}, sim=${imageValidation.similarity}, fullBody=${imageValidation.fullBody}, ageMatch=${imageValidation.ageMatch}, bodyTypeMatch=${imageValidation.bodyTypeMatch}. ${imageValidation.explanation}`,
+      `Picked image: nsfw=${imageValidation.nsfwProbability} sim=${imageValidation.similarity} fullBody=${imageValidation.fullBody} gender=${imageValidation.genderMatch} age=${imageValidation.ageMatch} body=${imageValidation.bodyTypeMatch} outfit=${imageValidation.outfitMatch}. ${imageValidation.explanation}`,
     );
   }
 
   if (imageValidation.nsfwProbability > nsfwThreshold) {
-    console.warn('Final generated image failed the safety check. Returning null image to frontend. Validation:', imageValidation);
     generatedImageUrl = null;
     generatedImageSrcSet = null;
-  } else if (!imageValidation.fullBody || imageValidation.similarity < similarityThreshold || !imageValidation.ageMatch || !imageValidation.bodyTypeMatch) {
-    console.warn('Final generated image is imperfect but safe; keeping it. Validation:', imageValidation);
   }
 
   return {
     success: true,
-    photoAnalysis,
+    photoAnalysis: { ...photoAnalysis, gender },
+    userSelections: {
+      occasion: occasionGuidance.label,
+      budget: budgetInfo.label,
+      height: heightInfo.label,
+      age: ageInfo.label,
+      bodyType: bodyInfo.label,
+      gender,
+    },
     outfitRecommendation,
     generatedImageUrl,
     generatedImageSrcSet,
@@ -615,7 +712,6 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
       const filename = req.file.filename;
       const mimeType = req.file.mimetype;
       const body = req.body;
-
       jobs.set(jobId, { status: 'pending', createdAt: Date.now() });
 
       (async () => {
@@ -627,9 +723,7 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
           console.error('Async job failed:', err?.message || err);
           jobs.set(jobId, { status: 'failed', error: err?.message || String(err), completedAt: Date.now() });
         }
-
         setTimeout(() => jobs.delete(jobId), 1000 * 60 * 30);
-
         try { fs.unlinkSync(filePath); } catch { /* ignore */ }
       })();
 
@@ -637,10 +731,15 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
     }
 
     const hostInfo = { protocol: req.protocol, host: req.get('host') };
-    const result = await processAnalysis({ photoPath: req.file.path, filename: req.file.filename, mimeType: req.file.mimetype, body: req.body, hostInfo });
+    const result = await processAnalysis({
+      photoPath: req.file.path,
+      filename: req.file.filename,
+      mimeType: req.file.mimetype,
+      body: req.body,
+      hostInfo,
+    });
 
     try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
-
     res.json(result);
   } catch (error) {
     console.error('Analysis error:', error);
@@ -651,7 +750,6 @@ router.post('/analyze', upload.single('photo'), async (req, res) => {
 router.get('/analyze/status/:jobId', (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found' });
-
   if (job.status === 'pending') return res.json({ status: 'pending' });
   if (job.status === 'failed') return res.json({ status: 'failed', error: job.error });
   return res.json({ status: 'completed', result: job.result });
