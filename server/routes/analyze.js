@@ -161,85 +161,113 @@ function mapBudget(budget) {
   return { label: 'Budget under ₹2,000', guidance: 'simple affordable commonly worn pieces, no designer, no rare fabrics' };
 }
 
-function mapBodyType(bodyType) {
+function mapBodyType(bodyType, gender = 'person') {
   const raw = lower(bodyType);
   const label = normalizePreference(bodyType);
+  const man = gender === 'man';
+  const woman = gender === 'woman';
+  const noun = man ? 'man' : woman ? 'woman' : 'person';
+  const anti = man
+    ? 'male, masculine, not a woman, not female, not feminine'
+    : woman
+      ? 'female, feminine, not a man, not male, not masculine'
+      : '';
+
   if (raw.includes('pear')) {
     return {
       kind: 'pear',
       label: label || 'Pear Shape',
-      phrase: 'pear-shaped body, wider hips',
-      visuals: 'narrower shoulders, defined waist, wider hips, fuller thighs, more weight on the lower body, not an inverted triangle, not skinny-straight',
-      fit: 'clothes that skim wider hips on a pear-shaped body',
+      phrase: `pear-shaped ${noun}, wider hips`,
+      visuals: man
+        ? `pear-shaped male body, narrower shoulders, wider hips and thighs, ${anti}`
+        : `pear-shaped female body, narrower shoulders, defined waist, wider hips, fuller thighs, ${anti}`,
+      fit: `clothes that skim wider hips on a pear-shaped ${noun}`,
     };
   }
   if (raw.includes('hourglass') || raw.includes('defined waist')) {
     return {
       kind: 'hourglass',
       label: label || 'Hourglass',
-      phrase: 'hourglass body, defined waist',
-      visuals: 'balanced bust and hips, cinched defined waist, curved figure, not straight, not plus-size bulky',
-      fit: 'clothes that show a defined waist on an hourglass body',
+      phrase: `hourglass ${noun}, defined waist`,
+      visuals: `hourglass ${noun} body, balanced hips, cinched waist, ${anti}`,
+      fit: `clothes that show a defined waist on an hourglass ${noun}`,
     };
   }
   if (raw.includes('plus') || raw.includes('fuller') || raw.includes('overweight')) {
     return {
       kind: 'plus',
       label: label || 'Plus Size',
-      phrase: 'plus-size fuller-figure body',
-      visuals: 'fuller figure, large round belly, thick waist, wide torso, heavy-set, thick arms and thighs, not slim, not athletic, not a model body',
-      fit: 'relaxed clothes on a plus-size fuller body',
+      phrase: `plus-size fuller-figure ${noun}`,
+      visuals: `plus-size ${noun}, fuller figure, large round belly, thick waist, wide torso, ${anti}, not slim`,
+      fit: `relaxed clothes on a plus-size ${noun}`,
     };
   }
   if (raw.includes('athletic') || raw.includes('muscular') || raw.includes('toned')) {
     return {
       kind: 'athletic',
       label: label || 'Athletic',
-      phrase: 'athletic muscular toned body',
-      visuals: 'broad shoulders, defined biceps, toned chest, visible muscle, strong legs, gym physique, not skinny, not plus-size',
-      fit: 'fitted clothes on a muscular athletic body',
+      phrase: `athletic muscular ${noun}`,
+      visuals: man
+        ? `athletic male gym body, broad male shoulders, defined biceps, flat male chest, ${anti}`
+        : `athletic female gym body, toned arms, athletic figure, ${anti}`,
+      fit: `fitted clothes on an athletic ${noun}`,
     };
   }
   if (raw.includes('slim') || raw.includes('lean') || raw.includes('slender') || raw.includes('skinny')) {
+    // "slender" codes female in Flux — never use it for men. Slim men get "thin/lean man".
     return {
       kind: 'slim',
       label: label || 'Slim',
-      phrase: 'slim lean slender body',
-      visuals: 'narrow waist, thin arms, slender legs, flat stomach, skinny frame, not muscular, not plus-size, not bulky',
-      fit: 'slim-fit clothes on a lean slender body',
+      phrase: man ? `slim thin lean man` : woman ? `slim slender woman` : 'slim lean person',
+      visuals: man
+        ? `skinny male body, thin male arms, narrow male waist, flat male chest, masculine slim build, male face, ${anti}`
+        : woman
+          ? `slim female body, narrow waist, slender arms and legs, feminine slim figure, ${anti}`
+          : 'slim lean thin body, narrow waist',
+      fit: man ? 'slim-fit menswear on a thin man' : `slim-fit clothes on a slim ${noun}`,
     };
   }
   if (raw.includes('average') || raw.includes('balanced') || raw.includes('regular') || raw.includes('medium')) {
     return {
       kind: 'average',
       label: label || 'Average',
-      phrase: 'average balanced medium build',
-      visuals: 'regular proportions, neither skinny nor plus-size, typical healthy body, not a bodybuilder',
-      fit: 'regular-fit clothes on an average balanced body',
+      phrase: `average balanced ${noun}`,
+      visuals: `average ${noun} body, regular proportions, neither skinny nor plus-size, ${anti}`,
+      fit: `regular-fit clothes on an average ${noun}`,
     };
   }
   if (label) {
     return {
       kind: 'other',
       label,
-      phrase: `${label} body`,
-      visuals: `body type is ${label}, body shape ${label}`,
-      fit: `clothes on a ${label} body`,
+      phrase: `${label} ${noun}`,
+      visuals: `${label} ${noun} body, ${anti}`,
+      fit: `clothes on a ${label} ${noun}`,
     };
   }
-  return { kind: '', label: '', phrase: '', visuals: '', fit: '' };
+  return { kind: '', label: '', phrase: noun, visuals: anti, fit: '' };
 }
 
 function genderNoun(photoAnalysis) {
   const raw = lower(photoAnalysis?.gender);
-  if (['female', 'woman', 'girl', 'lady', 'women'].includes(raw)) return 'woman';
-  if (['male', 'man', 'boy', 'men', 'gentleman'].includes(raw)) return 'man';
+  if (['female', 'woman', 'girl', 'lady', 'women', 'feminine'].includes(raw)) return 'woman';
+  if (['male', 'man', 'boy', 'men', 'gentleman', 'masculine'].includes(raw)) return 'man';
   const blob = lower(
     `${photoAnalysis?.hairDescription} ${photoAnalysis?.faceDescription} ${photoAnalysis?.appearanceDescription} ${photoAnalysis?.styleFeatures}`,
   );
-  if (/(beard|stubble|moustache|mustache|goatee)/.test(blob)) return 'man';
-  if (/(woman|female|lipstick)/.test(blob)) return 'woman';
+  if (/(beard|stubble|moustache|mustache|goatee|adam'?s apple)/.test(blob)) return 'man';
+  if (/(woman|female|lipstick|mascara)/.test(blob)) return 'woman';
   return 'person';
+}
+
+function genderLockPhrase(gender) {
+  if (gender === 'man') {
+    return 'a man, male, masculine, male face, this person is a man, not a woman, not female, not a girl';
+  }
+  if (gender === 'woman') {
+    return 'a woman, female, feminine, female face, this person is a woman, not a man, not male, not a boy';
+  }
+  return '';
 }
 
 function ageAdjustHair(hair, ageLook) {
@@ -255,19 +283,21 @@ function ageAdjustHair(hair, ageLook) {
 function buildPersonPrompt({ age, bodyType, height, photoAnalysis }) {
   const gender = genderNoun(photoAnalysis);
   const ageLook = mapAgeGroup(age);
-  const bodyLook = mapBodyType(bodyType);
+  const bodyLook = mapBodyType(bodyType, gender);
   const heightLook = mapHeight(height);
   const ethnicity = photoAnalysis?.ethnicAppearance || '';
   const skin = photoAnalysis?.skinTone ? `${photoAnalysis.skinTone} skin` : '';
   const hair = ageAdjustHair(photoAnalysis?.hairDescription, ageLook);
   const face = normalizePreference(photoAnalysis?.faceDescription);
+  const genderLock = genderLockPhrase(gender);
 
-  const subject = [bodyLook.phrase, heightLook.shortLabel, ageLook.phrase, gender].filter(Boolean).join(' ');
+  // Gender is the noun. Body type is only an adjective. "slim man" not "slim body ... man".
+  const subject = [`a ${gender}`, ageLook.phrase, bodyLook.phrase].filter(Boolean).join(', ');
   const lock = [
+    gender !== 'person' ? `gender ${gender}` : '',
     ageLook.label ? `age group ${ageLook.label}` : '',
     bodyLook.label ? `body type ${bodyLook.label}` : '',
     heightLook.label ? `height ${heightLook.label}` : '',
-    gender !== 'person' ? `gender ${gender}` : '',
   ].filter(Boolean).join(', ');
 
   const likeness = [hair, face, ethnicity, skin].filter(Boolean).join(', ');
@@ -280,6 +310,7 @@ function buildPersonPrompt({ age, bodyType, height, photoAnalysis }) {
     fit: bodyLook.fit,
     kind: bodyLook.kind,
     gender,
+    genderLock,
     expectedAgeLabel: ageLook.label,
     expectedBodyLabel: bodyLook.label,
     expectedGender: gender,
@@ -346,17 +377,20 @@ function garmentsForImage(rec) {
 }
 
 function buildFluxPrompt(personPrompt, garmentList, { repeat = false } = {}) {
+  const g = personPrompt.gender && personPrompt.gender !== 'person' ? personPrompt.gender : 'person';
   const parts = [
+    `full body photo of a ${g}`,
     FULL_BODY_FRAMING,
+    personPrompt.genderLock,
     personPrompt.subject,
     personPrompt.lock,
     personPrompt.details,
   ];
   if (repeat) {
+    parts.push(personPrompt.genderLock);
     parts.push(personPrompt.subject);
-    parts.push(personPrompt.lock);
   }
-  parts.push(`wearing ${garmentList}${personPrompt.fit ? `, ${personPrompt.fit}` : ''}`);
+  parts.push(`${g} wearing ${garmentList}${personPrompt.fit ? `, ${personPrompt.fit}` : ''}`);
   parts.push('plain studio backdrop');
   parts.push(NEGATIVE_INSTRUCTIONS);
   return parts.filter(Boolean).join(', ');
@@ -388,7 +422,7 @@ Rules:
 1) nsfwProbability 0-1.
 2) similarity 0-1 how well clothes match the outfit list.
 3) fullBody true only if head-to-shoes, both feet visible.
-4) genderMatch true only if the person is the required gender. A woman is FALSE if required is man, and vice versa.
+4) genderMatch true only if the person is the required gender. A woman is FALSE if required is man, and vice versa. Slim/lean bodies are often women in stock photos — if required gender is man, a female face or female body is FALSE even if the body is slim. Look at the face.
 5) ageMatch true only if apparent age matches the age group (Teen 13-19, Young Adult 20-30, Adult 31-45, Middle Age 46-60, Senior 60+). A 20-year-old model is FALSE for Middle Age or Senior. An elderly face is FALSE for Teen or Young Adult.
 6) bodyTypeMatch true only if the body matches:
    - Slim: lean/slender/thin. Muscular or plus-size is FALSE.
@@ -456,7 +490,7 @@ function scoreCandidate({ validation }, nsfwThreshold) {
   const safe = validation.nsfwProbability <= nsfwThreshold ? 1 : 0;
   return (
     safe * 100 +
-    (validation.genderMatch ? 20 : 0) +
+    (validation.genderMatch ? 40 : 0) +
     (validation.bodyTypeMatch ? 20 : 0) +
     (validation.ageMatch ? 20 : 0) +
     (validation.outfitMatch ? 15 : 0) +
@@ -486,7 +520,6 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   const budgetInfo = mapBudget(budget);
   const heightInfo = mapHeight(height);
   const ageInfo = mapAgeGroup(age);
-  const bodyInfo = mapBodyType(bodyType);
 
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   const photoData = fs.readFileSync(photoPath);
@@ -508,19 +541,20 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
 
 Return ONLY JSON:
 {
-  "skinTone": "exact skin tone",
   "gender": "male or female",
+  "skinTone": "exact skin tone",
   "hairDescription": "color, length, texture",
-  "faceDescription": "key facial features",
+  "faceDescription": "key facial features including jaw and brow",
   "ethnicAppearance": "South Asian / East Asian / Black / Hispanic / Middle Eastern / White / Mixed",
   "appearanceDescription": "one sentence",
   "styleFeatures": "visible current clothes/style"
 }
 
-Gender rules:
-- Return exactly "male" or "female". Do not return "neutral" unless the face is fully hidden.
+GENDER IS THE MOST IMPORTANT FIELD. Rules:
+- Return exactly "male" or "female". Do not return "neutral".
+- Decide from FACE: jaw, brow ridge, Adam's apple, beard, stubble, moustache, hairline — not from how slim or stylish they are.
+- A slim, lean, thin, or fashionable person can be male. Do NOT assume slim = female.
 - Beard, stubble, moustache, or Adam's apple => male.
-- Clearly feminine face/makeup/body => female.
 - Do not flip gender.
 
 JSON only. No markdown.`,
@@ -539,6 +573,7 @@ JSON only. No markdown.`,
 
   const personPrompt = buildPersonPrompt({ age, bodyType, height, photoAnalysis });
   const gender = personPrompt.gender;
+  const bodyInfo = mapBodyType(bodyType, gender);
   const genderClothes =
     gender === 'man'
       ? 'MENSWEAR only: shirt, kurta, trousers, jeans, jacket, sneakers or formal shoes. Never a dress, saree, lehenga, skirt, heels, or blouse.'
