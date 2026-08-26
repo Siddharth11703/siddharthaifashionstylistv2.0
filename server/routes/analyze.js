@@ -72,11 +72,22 @@ function lower(value) {
 
 // Check "female" before "male" because "female" contains "male".
 function parseGender(value) {
+  if (value === true || value === false) return '';
   const raw = lower(value);
   if (!raw) return '';
+  if (raw === 'm' || raw === '1') return 'man';
+  if (raw === 'f' || raw === 'w' || raw === '0') return 'woman';
   if (/(female|woman|girl|lady|women|feminine)/.test(raw)) return 'woman';
   if (/(male|man|boy|men|masculine|gentleman)/.test(raw)) return 'man';
   return '';
+}
+
+function inferGenderFromCues(photoAnalysis) {
+  const blob = lower(
+    `${photoAnalysis?.gender} ${photoAnalysis?.hairDescription} ${photoAnalysis?.faceDescription} ${photoAnalysis?.appearanceDescription} ${photoAnalysis?.styleFeatures}`,
+  );
+  if (/(beard|stubble|moustache|mustache|goatee|adam'?s apple)/.test(blob)) return 'man';
+  return parseGender(photoAnalysis?.gender);
 }
 
 function readUserInputs(body = {}) {
@@ -257,12 +268,14 @@ function garmentsForImage(rec) {
   return 'simple shirt, trousers, shoes';
 }
 
-// Keep this SHORT. Clothes must sit in the first ~70 tokens or Flux ignores them.
-function buildFluxPrompt(person, garmentList) {
+// Face AND shoes must be named first. "shoes visible" alone makes Flux crop the head.
+function buildFluxPrompt(person, garmentList, { zoomOut = false } = {}) {
   const g = person.gender === 'woman' ? 'woman' : person.gender === 'man' ? 'man' : 'person';
+  const framing = zoomOut
+    ? `zoomed out wide full body photo of a ${g}, camera far away, entire person in frame, face visible, hair visible, both shoes visible, empty space above the head, uncropped`
+    : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped`;
   return [
-    `full body photo of a ${g}`,
-    'head to toe, shoes visible',
+    framing,
     person.subject,
     person.bodyShort,
     person.heightShort,
@@ -270,7 +283,7 @@ function buildFluxPrompt(person, garmentList) {
     person.hair,
     person.skin,
     person.ethnicity,
-    'plain studio backdrop, fully clothed',
+    'plain studio backdrop, fully clothed, not cropped at the neck',
   ].filter(Boolean).join(', ');
 }
 
@@ -285,13 +298,15 @@ async function detectGenderFromPhoto(groq, dataUrl) {
             { type: 'image_url', image_url: { url: dataUrl } },
             {
               type: 'text',
-              text: `Look at the FACE in this photo. Classify biological presentation as male or female.
+              text: `Look at the FACE in this photo. Classify as male or female.
 
 Return JSON only: {"gender":"male"} or {"gender":"female"}
 
-Use jaw, brow, beard, stubble, moustache, Adam's apple, hairline.
-Slim, stylish, or long hair does NOT mean female.
-You MUST return male or female. Never neutral, never unknown, never empty.`,
+Rules:
+- Use the FACE: jaw, brow, beard, stubble, moustache, Adam's apple, hairline.
+- Slim, stylish, or long hair does NOT mean female.
+- A man can be slim. A woman can have short hair.
+- You MUST return exactly "male" or "female". Never neutral, never unknown.`,
             },
           ],
         },
@@ -301,7 +316,7 @@ You MUST return male or female. Never neutral, never unknown, never empty.`,
       response_format: { type: 'json_object' },
     });
     const parsed = parseJsonObject(response.choices[0].message.content) || {};
-    return parseGender(parsed.gender || parsed.sex || parsed.label || parsed.answer);
+    return parseGender(parsed.gender || parsed.sex || parsed.label || parsed.answer || (parsed.is_male === true ? 'male' : parsed.is_male === false ? 'female' : ''));
   };
 
   try {
@@ -357,16 +372,20 @@ async function validateImageWithGroq(groqClient, imageUrl, garmentList, person =
             { type: 'image_url', image_url: { url: imageUrl } },
             {
               type: 'text',
-              text: `JSON only: {"nsfwProbability":number,"fullBody":boolean,"genderMatch":boolean,"ageMatch":boolean,"bodyTypeMatch":boolean,"outfitMatch":boolean,"similarity":number,"explanation":string}
+              text: `Validate this fashion photo. JSON only:
+{"nsfwProbability":number,"fullBody":boolean,"headVisible":boolean,"feetVisible":boolean,"genderMatch":boolean,"ageMatch":boolean,"bodyTypeMatch":boolean,"outfitMatch":boolean,"similarity":number,"explanation":string}
 
 Required gender: ${expectedGender || 'any'}
 Required age: ${expectedAge || 'any'}
 Required body: ${expectedBody || 'any'}
 Required clothes: ${garmentList}
 
-genderMatch: face must be ${expectedGender || 'the required gender'}. Slim woman is FALSE if required is man.
-outfitMatch: true only if the visible clothes are these items: ${garmentList}
-fullBody: head to shoes, feet visible.
+Rules:
+- headVisible: true ONLY if the face and top of the head are inside the frame. Cropped at neck/chest = false.
+- feetVisible: true ONLY if both shoes/feet are inside the frame.
+- fullBody: true ONLY if headVisible AND feetVisible. A headless or knee-up crop is false.
+- genderMatch: the FACE must match ${expectedGender || 'required gender'}. If the head is cropped, genderMatch is false. A slim woman is FALSE if required is man.
+- outfitMatch: visible clothes match: ${garmentList}
 JSON only.`,
             },
           ],
@@ -380,10 +399,15 @@ JSON only.`,
     if (!parsed) {
       return { nsfwProbability: 0, similarity: 1, fullBody: true, ageMatch: true, bodyTypeMatch: true, genderMatch: true, outfitMatch: true, explanation: 'Validation bypassed' };
     }
+    const headVisible = parsed.headVisible === true;
+    const feetVisible = parsed.feetVisible === true;
+    const fullBody = parsed.fullBody === true && headVisible && feetVisible;
     return {
       nsfwProbability: Number(parsed.nsfwProbability) || 0,
       similarity: Number(parsed.similarity) || 0,
-      fullBody: parsed.fullBody !== false,
+      fullBody,
+      headVisible,
+      feetVisible,
       ageMatch: expectedAge ? parsed.ageMatch === true : true,
       bodyTypeMatch: expectedBody ? parsed.bodyTypeMatch === true : true,
       genderMatch: expectedGender ? parsed.genderMatch === true : true,
@@ -392,7 +416,7 @@ JSON only.`,
     };
   } catch (err) {
     console.warn('Image validation failed:', err?.message || err);
-    return { nsfwProbability: 0, similarity: 1, fullBody: true, ageMatch: true, bodyTypeMatch: true, genderMatch: true, outfitMatch: true, explanation: 'Validation service error bypassed' };
+    return { nsfwProbability: 0, similarity: 1, fullBody: true, headVisible: true, feetVisible: true, ageMatch: true, bodyTypeMatch: true, genderMatch: true, outfitMatch: true, explanation: 'Validation service error bypassed' };
   }
 }
 
@@ -420,11 +444,11 @@ function scoreCandidate({ validation }, nsfwThreshold) {
   const safe = validation.nsfwProbability <= nsfwThreshold ? 1 : 0;
   return (
     safe * 100 +
+    (validation.fullBody ? 50 : 0) +
     (validation.genderMatch ? 40 : 0) +
-    (validation.outfitMatch ? 30 : 0) +
+    (validation.outfitMatch ? 25 : 0) +
     (validation.bodyTypeMatch ? 15 : 0) +
     (validation.ageMatch ? 15 : 0) +
-    (validation.fullBody ? 8 : 0) +
     validation.similarity
   );
 }
@@ -462,13 +486,17 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   ]);
 
   let photoAnalysis = appearance || getFallbackPhotoAnalysis();
-  let gender = inputs.gender || genderFromFace || parseGender(photoAnalysis.gender);
+  let gender =
+    inputs.gender ||
+    genderFromFace ||
+    inferGenderFromCues(photoAnalysis) ||
+    parseGender(photoAnalysis.gender);
 
   if (!gender) {
     gender = await detectGenderFromPhoto(groq, dataUrl);
   }
   if (!gender) {
-    gender = parseGender(photoAnalysis.gender) || parseGender(photoAnalysis.appearanceDescription);
+    gender = inferGenderFromCues(photoAnalysis) || parseGender(photoAnalysis.appearanceDescription);
   }
   if (!gender) {
     console.warn('Gender still unresolved after retries; not using a fake default.');
@@ -543,8 +571,8 @@ JSON:
 
   const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
   const parallelCount = Math.min(2, Math.max(1, parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '2', 10)));
-  const promptA = buildFluxPrompt(personPrompt, garmentList);
-  const promptB = buildFluxPrompt(personPrompt, `${garmentList}, ${garmentList}`);
+  const promptA = buildFluxPrompt(personPrompt, garmentList, { zoomOut: false });
+  const promptB = buildFluxPrompt(personPrompt, garmentList, { zoomOut: true });
 
   const tasks = [
     generateAndValidateCandidate(groq, promptA, Math.floor(Math.random() * 999999), garmentList, personPrompt, nsfwThreshold),
@@ -568,6 +596,24 @@ JSON:
     if (!bestCandidate || candidate.score > bestCandidate.score) bestCandidate = candidate;
   }
 
+  if (bestCandidate && !bestCandidate.validation.fullBody) {
+    try {
+      const retry = await generateAndValidateCandidate(
+        groq,
+        buildFluxPrompt(personPrompt, garmentList, { zoomOut: true }),
+        Math.floor(Math.random() * 999999),
+        garmentList,
+        personPrompt,
+        nsfwThreshold,
+      );
+      if (retry.score > bestCandidate.score || retry.validation.fullBody) {
+        bestCandidate = retry;
+      }
+    } catch (err) {
+      console.warn('Full-body retry failed:', err?.message || err);
+    }
+  }
+
   let generatedImageUrl = null;
   let generatedImageSrcSet = null;
   let imageValidation = {
@@ -586,7 +632,7 @@ JSON:
     generatedImageSrcSet = bestCandidate.result.srcset;
     imageValidation = bestCandidate.validation;
     console.warn(
-      `Picked image: gender=${imageValidation.genderMatch} outfit=${imageValidation.outfitMatch} body=${imageValidation.bodyTypeMatch} age=${imageValidation.ageMatch} fullBody=${imageValidation.fullBody}. ${imageValidation.explanation}`,
+      `Picked image: fullBody=${imageValidation.fullBody} head=${imageValidation.headVisible} feet=${imageValidation.feetVisible} gender=${imageValidation.genderMatch} outfit=${imageValidation.outfitMatch}. ${imageValidation.explanation}`,
     );
   }
 
