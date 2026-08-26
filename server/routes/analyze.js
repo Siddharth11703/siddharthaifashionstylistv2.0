@@ -243,43 +243,38 @@ function buildOccasionGuidance(occasion) {
   };
 }
 
-function shortenPiece(piece) {
-  return String(piece || '')
-    .replace(/["']/g, '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 5)
-    .join(' ');
+function visualOutfitSpec(rec) {
+  const pieces = (Array.isArray(rec?.keyPieces) ? rec.keyPieces : [])
+    .map((p) => String(p || '').replace(/["']/g, '').trim())
+    .filter(Boolean);
+  const desc = String(rec?.outfitDescription || '').replace(/\s+/g, ' ').trim();
+  const colors = (Array.isArray(rec?.colorPalette) ? rec.colorPalette : [])
+    .map((c) => String(c || '').trim())
+    .filter(Boolean);
+  const pieceLine = pieces.join(', ');
+  const colorLine = colors.length ? `colors: ${colors.join(', ')}` : '';
+  const wearing = [pieceLine, desc, colorLine].filter(Boolean).join('. ');
+  return { pieces, pieceLine, desc, colorLine, wearing };
 }
 
 function garmentsForImage(rec) {
-  const fromPieces = (Array.isArray(rec?.keyPieces) ? rec.keyPieces : [])
-    .map(shortenPiece)
-    .filter(Boolean)
-    .slice(0, 5);
-  if (fromPieces.length >= 3) return fromPieces.join(', ');
-  const fromPrompt = String(rec?.imagePrompt || '')
-    .split(',')
-    .map(shortenPiece)
-    .filter(Boolean)
-    .slice(0, 5);
-  if (fromPrompt.length) return fromPrompt.join(', ');
-  if (fromPieces.length) return fromPieces.join(', ');
-  return 'simple shirt, trousers, shoes';
+  return visualOutfitSpec(rec).wearing;
 }
 
-// Face AND shoes must be named first. "shoes visible" alone makes Flux crop the head.
-function buildFluxPrompt(person, garmentList, { zoomOut = false } = {}) {
+function buildFluxPrompt(person, spec, { zoomOut = false } = {}) {
   const g = person.gender === 'woman' ? 'woman' : person.gender === 'man' ? 'man' : 'person';
   const framing = zoomOut
     ? `zoomed out wide full body photo of a ${g}, camera far away, entire person in frame, face visible, hair visible, both shoes visible, empty space above the head, uncropped`
     : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped`;
   return [
     framing,
+    spec.pieceLine ? `wearing ${spec.pieceLine}` : '',
+    spec.desc ? `outfit details: ${spec.desc}` : '',
+    spec.colorLine,
+    'every garment, layer, and color named in the outfit details is visible on the body',
     person.subject,
     person.bodyShort,
     person.heightShort,
-    `wearing ${garmentList}`,
     person.hair,
     person.skin,
     person.ethnicity,
@@ -523,12 +518,16 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
 
 ${genderClothes}
 
+The photo will be generated from outfitDescription + keyPieces. They must be the SAME outfit.
+
 Rules:
 - Occasion and budget are mandatory.
-- keyPieces must be 4 short items: top, bottom, shoes, optional layer. Max 5 words each. Example: "navy cotton shirt", "beige chinos", "brown leather belt", "white sneakers".
-- outfitDescription must use those exact same items.
-- imagePrompt must be those same items, comma-separated.
-- No runway, no fantasy, no extra garments that are not in keyPieces.`,
+- Describe a complete real outfit: every visible layer, bottom, and shoes, each with a color.
+- This applies to ANY clothing (shirt, jeans, dress, blazer, kurta, sneakers, heels, etc.). Do not drop layers.
+- keyPieces: 4-6 items, each starting with a color, covering every garment in the description.
+- outfitDescription: 5-7 sentences, head to toe, using ONLY those garments. Do not add or omit items.
+- colorPalette: the same colors used on those garments.
+- imagePrompt: one head-to-toe sentence listing every garment and color from the description.`,
       },
       {
         role: 'user',
@@ -548,10 +547,10 @@ JSON:
   "outfitDescription": "5-7 sentences using the same garments as keyPieces, head to toe",
   "colorPalette": ["3-5 colors"],
   "explanation": "why this common outfit fits gender, age, body, budget, occasion",
-  "keyPieces": ["color top", "color bottom", "color shoes", "optional layer"],
+  "keyPieces": ["color + garment", "color + garment", "color + bottom", "color + shoes"],
   "occasions": ["2-3 events"],
   "stylingTips": ["3 tips"],
-  "imagePrompt": "copy of keyPieces, comma-separated"
+  "imagePrompt": "one sentence, every garment and color from the description, head to toe"
 }`,
       },
     ],
@@ -563,16 +562,14 @@ JSON:
     throw new Error('Failed to generate outfit recommendation');
   }
 
-  const garmentList = garmentsForImage(outfitRecommendation);
-  outfitRecommendation.imagePrompt = garmentList;
-  if (!Array.isArray(outfitRecommendation.keyPieces) || outfitRecommendation.keyPieces.length < 3) {
-    outfitRecommendation.keyPieces = garmentList.split(',').map((s) => s.trim()).filter(Boolean);
-  }
+  const spec = visualOutfitSpec(outfitRecommendation);
+  outfitRecommendation.imagePrompt = spec.wearing;
+  const garmentList = spec.wearing;
 
   const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
   const parallelCount = Math.min(2, Math.max(1, parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '2', 10)));
-  const promptA = buildFluxPrompt(personPrompt, garmentList, { zoomOut: false });
-  const promptB = buildFluxPrompt(personPrompt, garmentList, { zoomOut: true });
+  const promptA = buildFluxPrompt(personPrompt, spec, { zoomOut: false });
+  const promptB = buildFluxPrompt(personPrompt, spec, { zoomOut: true });
 
   const tasks = [
     generateAndValidateCandidate(groq, promptA, Math.floor(Math.random() * 999999), garmentList, personPrompt, nsfwThreshold),
@@ -600,7 +597,7 @@ JSON:
     try {
       const retry = await generateAndValidateCandidate(
         groq,
-        buildFluxPrompt(personPrompt, garmentList, { zoomOut: true }),
+        buildFluxPrompt(personPrompt, spec, { zoomOut: true }),
         Math.floor(Math.random() * 999999),
         garmentList,
         personPrompt,
