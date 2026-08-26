@@ -243,22 +243,62 @@ function buildOccasionGuidance(occasion) {
   };
 }
 
-function visualOutfitSpec(rec) {
-  const pieces = (Array.isArray(rec?.keyPieces) ? rec.keyPieces : [])
-    .map((p) => String(p || '').replace(/["']/g, '').trim())
+function itemsToLine(items) {
+  return (items || [])
+    .map((item) => {
+      if (typeof item === 'string') return item.replace(/["']/g, '').trim();
+      if (item && typeof item === 'object') {
+        return [item.color, item.item || item.name || item.garment].filter(Boolean).join(' ').trim();
+      }
+      return '';
+    })
     .filter(Boolean);
-  const desc = String(rec?.outfitDescription || '').replace(/\s+/g, ' ').trim();
-  const colors = (Array.isArray(rec?.colorPalette) ? rec.colorPalette : [])
-    .map((c) => String(c || '').trim())
-    .filter(Boolean);
-  const pieceLine = pieces.join(', ');
-  const colorLine = colors.length ? `colors: ${colors.join(', ')}` : '';
-  const wearing = [pieceLine, desc, colorLine].filter(Boolean).join('. ');
-  return { pieces, pieceLine, desc, colorLine, wearing };
 }
 
-function garmentsForImage(rec) {
-  return visualOutfitSpec(rec).wearing;
+async function extractGarmentsForImage(groq, rec) {
+  const fallback = itemsToLine(rec?.keyPieces);
+  try {
+    const response = await groq.chat.completions.create({
+      model: GROQ_TEXT_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'Extract clothing. Return JSON only. No marketing language.',
+        },
+        {
+          role: 'user',
+          content: `List EVERY visible garment this person wears, with color. Include every layer, bottom, and shoes. Any clothing type.
+
+Outfit text:
+${rec?.outfitDescription || ''}
+
+keyPieces: ${(rec?.keyPieces || []).join('; ')}
+
+JSON: {"items":["color + garment","color + garment","color + bottom","color + shoes"]}`,
+        },
+      ],
+      max_tokens: 250,
+      response_format: { type: 'json_object' },
+    });
+    const parsed = parseJsonObject(response.choices[0].message.content) || {};
+    const extracted = itemsToLine(parsed.items || parsed.garments || parsed.keyPieces);
+    if (extracted.length >= 3) return extracted;
+  } catch (err) {
+    console.warn('Garment extract failed:', err?.message || err);
+  }
+  if (fallback.length) return fallback;
+  const fromPrompt = String(rec?.imagePrompt || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return fromPrompt.length ? fromPrompt : ['simple shirt', 'trousers', 'shoes'];
+}
+
+function visualOutfitSpec(items) {
+  const pieces = itemsToLine(items);
+  const pieceLine = pieces.join(', ');
+  const andLine = pieces.join(' and ');
+  return { pieces, pieceLine, andLine, wearing: pieceLine };
 }
 
 function buildFluxPrompt(person, spec, { zoomOut = false } = {}) {
@@ -268,13 +308,11 @@ function buildFluxPrompt(person, spec, { zoomOut = false } = {}) {
     : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped`;
   return [
     framing,
-    spec.pieceLine ? `wearing ${spec.pieceLine}` : '',
-    spec.desc ? `outfit details: ${spec.desc}` : '',
-    spec.colorLine,
-    'every garment, layer, and color named in the outfit details is visible on the body',
     person.subject,
     person.bodyShort,
-    person.heightShort,
+    `${g} wearing ${spec.pieceLine}`,
+    `wearing ${spec.andLine}`,
+    'all named garments visible, photorealistic, not runway, not fashion editorial',
     person.hair,
     person.skin,
     person.ethnicity,
@@ -562,9 +600,13 @@ JSON:
     throw new Error('Failed to generate outfit recommendation');
   }
 
-  const spec = visualOutfitSpec(outfitRecommendation);
-  outfitRecommendation.imagePrompt = spec.wearing;
-  const garmentList = spec.wearing;
+  const garmentItems = await extractGarmentsForImage(groq, outfitRecommendation);
+  const spec = visualOutfitSpec(garmentItems);
+  outfitRecommendation.imagePrompt = spec.pieceLine;
+  if (!Array.isArray(outfitRecommendation.keyPieces) || outfitRecommendation.keyPieces.length < 3) {
+    outfitRecommendation.keyPieces = spec.pieces;
+  }
+  const garmentList = spec.pieceLine;
 
   const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
   const parallelCount = Math.min(2, Math.max(1, parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '2', 10)));
