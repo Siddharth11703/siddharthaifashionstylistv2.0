@@ -305,7 +305,7 @@ function buildFluxPrompt(person, spec, { zoomOut = false } = {}) {
   const g = person.gender === 'woman' ? 'woman' : person.gender === 'man' ? 'man' : 'person';
   const framing = zoomOut
     ? `camera far away, entire person in frame, face visible, hair visible, both shoes visible, empty space above the head, uncropped`
-    : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped`, zoomed out wide full body photo of a ${g};
+    : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped, zoomed out wide full body photo of a ${g}`;
   return [
     framing,
     person.subject,
