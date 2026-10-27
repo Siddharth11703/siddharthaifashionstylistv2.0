@@ -465,11 +465,16 @@ async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
   const widths = [576, 768, 1024];
+  
   const srcParts = widths.map((w) => {
     const h = Math.round((w * 3) / 2);
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
+    // Removed &model=flux from the line below
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
   });
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
+  
+  // Removed &model=flux from the line below
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&nologo=true&enhance=false&safe=false${seedParam}`;
+  
   return { url: defaultUrl, srcset: srcParts.join(', ') };
 }
 
