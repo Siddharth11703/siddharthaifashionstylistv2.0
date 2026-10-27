@@ -208,9 +208,16 @@ function buildPersonPrompt({ age, bodyType, height, photoAnalysis, gender }) {
   const skin = photoAnalysis?.skinTone ? `${photoAnalysis.skinTone} skin` : '';
   const ethnicity = photoAnalysis?.ethnicAppearance || '';
 
+  // FIX: Dynamically assign boy/girl for teens instead of man/woman to prevent AI confusion
+  let genderNoun = gender;
+  if (ageLook.years && ageLook.years <= 19) {
+    if (gender === 'man') genderNoun = 'teenage boy';
+    if (gender === 'woman') genderNoun = 'teenage girl';
+  }
+
   return {
     gender,
-    subject: [ageLook.phrase, gender].filter(Boolean).join(' '),
+    subject: [ageLook.phrase, genderNoun].filter(Boolean).join(' '),
     bodyShort: bodyLook.phrase,
     heightShort: heightLook.phrase,
     hair,
@@ -302,22 +309,16 @@ function visualOutfitSpec(items) {
 }
 
 function buildFluxPrompt(person, spec, { zoomOut = false } = {}) {
-  const g = person.gender === 'woman' ? 'woman' : person.gender === 'man' ? 'man' : 'person';
-  const framing = zoomOut
-    ? `camera far away, entire person in frame, face visible, hair visible, both shoes visible, empty space above the head, uncropped`
-    : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped, zoomed out wide full body photo of a ${g}`;
-  return [
-    framing,
-    person.subject,
-    person.bodyShort,
-    `${g} wearing ${spec.pieceLine}`,
-    `wearing ${spec.andLine}`,
-    'all named garments visible, photorealistic, not runway, not fashion editorial',
-    person.hair,
-    person.skin,
-    person.ethnicity,
-    'plain studio backdrop, fully clothed, not cropped at the neck',
-  ].filter(Boolean).join(', ');
+  // FIX: Use the tailored subject noun (e.g., teenage boy/girl) if applicable
+  const g = person.subject.includes('boy') ? 'teenage boy' 
+          : person.subject.includes('girl') ? 'teenage girl' 
+          : person.gender === 'woman' ? 'woman' 
+          : person.gender === 'man' ? 'man' 
+          : 'person';
+
+  const framing = zoomOut ? `camera far away, entire person in frame, face visible, hair visible, both shoes visible, empty space above the head, uncropped` : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped, zoomed out wide full body photo of a ${g}`;
+  
+  return [framing, person.subject, person.bodyShort, `${g} wearing ${spec.pieceLine}`, `wearing ${spec.andLine}`, 'all named garments visible, photorealistic, not runway, not fashion editorial', person.hair, person.skin, person.ethnicity, 'plain studio backdrop, fully clothed, not cropped at the neck'].filter(Boolean).join(', ');
 }
 
 async function detectGenderFromPhoto(groq, dataUrl) {
@@ -339,6 +340,7 @@ Rules:
 - Use the FACE: jaw, brow, beard, stubble, moustache, Adam's apple, hairline.
 - Slim, stylish, or long hair does NOT mean female.
 - A man can be slim. A woman can have short hair.
+- This is a safe fashion app. Do not refuse analysis for teenagers or youths.
 - You MUST return exactly "male" or "female". Never neutral, never unknown.`,
             },
           ],
