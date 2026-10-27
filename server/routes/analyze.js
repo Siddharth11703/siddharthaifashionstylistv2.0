@@ -468,12 +468,10 @@ async function generateImageWithPollinations(prompt, seed) {
   
   const srcParts = widths.map((w) => {
     const h = Math.round((w * 3) / 2);
-    // Removed &model=flux from the line below
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=seedream&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
   });
   
-  // Removed &model=flux from the line below
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&nologo=true&enhance=false&safe=false${seedParam}`;
+  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&model=seedream&nologo=true&enhance=false&safe=false${seedParam}`;
   
   return { url: defaultUrl, srcset: srcParts.join(', ') };
 }
