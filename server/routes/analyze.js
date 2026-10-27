@@ -466,16 +466,13 @@ async function fetchImageAsDataUrl(url, timeoutMs = 30000) {
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
   const seedParam = seed ? `&seed=${seed}` : '';
-  const widths = [576, 768, 1024];
   
-  const srcParts = widths.map((w) => {
-    const h = Math.round((w * 3) / 2);
-    return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${w}&height=${h}&model=flux&nologo=true&enhance=false&safe=false${seedParam} ${w}w`;
-  });
-  
+  // Request only ONE high-resolution vertical image (1024x1536) for the full body
   const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
   
-  return { url: defaultUrl, srcset: srcParts.join(', ') };
+  // Return the single URL. 
+  // By passing the same URL for srcset, we prevent the browser from requesting smaller extra sizes.
+  return { url: defaultUrl, srcset: `${defaultUrl} 1024w` };
 }
 
 function scoreCandidate({ validation }, nsfwThreshold) {
