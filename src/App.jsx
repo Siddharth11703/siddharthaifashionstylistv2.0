@@ -6,7 +6,6 @@ import AuthModal from './components/AuthModal';
 import LoadingScreen from './components/LoadingScreen';
 import SavedOutfits from './pages/SavedOutfits';
 
-
 const parseApiResponse = async (res) => {
   const text = await res.text();
   const contentType = res.headers.get('content-type') || '';
@@ -24,7 +23,6 @@ const parseApiResponse = async (res) => {
   }
 };
 
-
 export default function App() {
   const [page, setPage] = useState('home'); // home | saved
   const [step, setStep] = useState(0);
@@ -41,7 +39,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [showAuth, setShowAuth] = useState(false);
   const [user, setUser] = useState(null);
-  const [savingOutfit, setSavingOutfit] = useState(false);
+  const [savingOutfit, setSavingOutfit] = useState(false); // eslint-disable-line no-unused-vars
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const canProceedFromPhoto = !!photo;
@@ -66,7 +64,7 @@ export default function App() {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         body: formData,
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(120000),
       });
 
       const data = await parseApiResponse(res);
@@ -75,7 +73,7 @@ export default function App() {
         throw new Error(data.error || 'Analysis failed');
       }
 
-      setResult({ ...data, photoFile: photo.file });
+      setResult({ ...data, ...preferences, photoFile: photo.file });
       setStep(2);
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
@@ -140,6 +138,25 @@ export default function App() {
     setError('');
     setSavedSuccess(false);
   };
+  
+  const handleSignOut = () => {
+    setUser(null);
+    setPage('home');
+  };
+
+  // --- THESE ARE THE SAFETY CHECKS PREVENTING THE BLACK SCREEN ---
+  const getUserDisplayLetter = () => {
+    if (user?.name && typeof user.name === 'string') return user.name.charAt(0).toUpperCase();
+    if (user?.email && typeof user.email === 'string') return user.email.charAt(0).toUpperCase();
+    return 'U';
+  };
+
+  const getUserDisplayName = () => {
+    if (user?.name && typeof user.name === 'string') return user.name.split(' ')[0];
+    if (user?.email && typeof user.email === 'string') return user.email.split('@')[0];
+    return 'User';
+  };
+  // ---------------------------------------------------------------
 
   if (page === 'saved') {
     return (
@@ -180,12 +197,22 @@ export default function App() {
               </button>
             )}
             {user ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
-                  {user.name[0].toUpperCase()}
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+                    {getUserDisplayLetter()}
+                  </div>
+                  <span className="text-purple-300 text-sm font-medium hidden sm:block">
+                    {getUserDisplayName()}
+                  </span>
                 </div>
-                <span className="text-purple-300 text-sm font-medium hidden sm:block">{user.name.split(' ')[0]}</span>
-              </div>
+                <button
+                  onClick={handleSignOut}
+                  style={{ backgroundColor: 'transparent', color: '#ffffff', border: '1px solid #4b5563', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' }}
+                >
+                  Sign out
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => setShowAuth(true)}
