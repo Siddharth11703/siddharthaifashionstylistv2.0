@@ -9,8 +9,11 @@ import { v4 as uuidv4 } from 'uuid';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
-const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'llama-3.2-90b-vision-preview';
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b';
 const GROQ_TEXT_MODEL = process.env.GROQ_TEXT_MODEL || 'openai/gpt-oss-120b';
+// Flux on image.pollinations.ai now returns HTTP 402 Payment Required.
+// `sana` is the Pollinations model that still generates an image with no API key.
+const POLLINATIONS_FREE_MODEL = 'sana';
 
 const getUploadDir = () => {
   if (process.env.VERCEL === '1') return '/tmp/uploads';
@@ -70,23 +73,107 @@ function lower(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-// Check "female" before "male" because "female" contains "male".
+function messageText(message) {
+  const content = message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => (typeof part === 'string' ? part : part?.text || '')).join('\n');
+  }
+  return '';
+}
+
+// Word boundaries so "female" is not "male" and "woman" is not "man".
+// Negated phrases ("not a woman", "no beard") are removed before matching.
 function parseGender(value) {
   if (value === true || value === false) return '';
   const raw = lower(value);
   if (!raw) return '';
   if (raw === 'm' || raw === '1') return 'man';
   if (raw === 'f' || raw === 'w' || raw === '0') return 'woman';
-  if (/(female|woman|girl|lady|women|feminine)/.test(raw)) return 'woman';
-  if (/(male|man|boy|men|masculine|gentleman)/.test(raw)) return 'man';
+  if (/^(male|man|boy|men|masculine|gentleman)$/.test(raw)) return 'man';
+  if (/^(female|woman|girl|lady|women|feminine)$/.test(raw)) return 'woman';
+
+  const stripped = raw
+    .replace(/\b(?:not|no|non|never|without|n't)\s+(?:a\s+|an\s+)?(?:fe)?male\b/g, ' ')
+    .replace(/\b(?:not|no|non|never|without|n't)\s+(?:a\s+|an\s+)?(?:wo)?man\b/g, ' ')
+    .replace(/\b(?:not|no|non|never|without|n't)\s+(?:a\s+|an\s+)?(?:boy|girl|woman|women|lady|feminine|masculine|gentleman)\b/g, ' ');
+
+  const woman = /\b(?:female|woman|girl|lady|women|feminine)\b/.test(stripped);
+  const man = /\b(?:male|man|boy|men|masculine|gentleman)\b/.test(stripped);
+  if (man && !woman) return 'man';
+  if (woman && !man) return 'woman';
+  if (man && woman) {
+    const lastMan = Math.max(
+      stripped.lastIndexOf('male'),
+      stripped.lastIndexOf('man'),
+      stripped.lastIndexOf('boy'),
+    );
+    const lastWoman = Math.max(
+      stripped.lastIndexOf('female'),
+      stripped.lastIndexOf('woman'),
+      stripped.lastIndexOf('girl'),
+    );
+    if (lastMan > lastWoman) return 'man';
+    if (lastWoman > lastMan) return 'woman';
+  }
   return '';
 }
 
+function hasVisibleFacialHair(value) {
+  const raw = lower(value);
+  if (!raw || /^(none|no|clean|absent|unclear|unknown|n\/a|na)$/.test(raw)) return false;
+  if (/\b(?:no|not|none|without|absent|clean[ -]?shaven|lacks?)\b/.test(raw)) return false;
+  return /\b(?:stubble|moustache|mustache|beard|goatee|sideburns)\b/.test(raw);
+}
+
+// Positive = man, negative = woman. Facial hair only counts when it is present,
+// never when the model says "no beard".
+function scoreGenderCues(parsed = {}) {
+  let score = 0;
+  const reasons = [];
+  if (hasVisibleFacialHair(parsed.facialHair || parsed.facial_hair || parsed.beard)) {
+    score += 6;
+    reasons.push('facial-hair');
+  }
+  const apple = lower(parsed.adamsApple || parsed.adams_apple || parsed.adam);
+  if (apple === 'yes' || apple === 'true' || apple === 'visible') {
+    score += 3;
+    reasons.push('adams-apple');
+  }
+  const jaw = lower(parsed.jaw);
+  if (jaw === 'angular' || jaw === 'square') score += 1;
+  if (jaw === 'soft' || jaw === 'round') score -= 1;
+  const brow = lower(parsed.browRidge || parsed.brow || parsed.brow_ridge);
+  if (brow === 'prominent' || brow === 'heavy') score += 1;
+  if (brow === 'soft' || brow === 'light') score -= 1;
+  const label = parseGender(parsed.gender || parsed.sex || parsed.label);
+  if (label === 'man') {
+    score += 3;
+    reasons.push('label-man');
+  }
+  if (label === 'woman') {
+    score -= 3;
+    reasons.push('label-woman');
+  }
+  let gender = '';
+  if (score >= 3) gender = 'man';
+  else if (score <= -3) gender = 'woman';
+  else gender = label;
+  return { gender, score, reasons, label };
+}
+
 function inferGenderFromCues(photoAnalysis) {
+  const cues = scoreGenderCues({
+    facialHair: photoAnalysis?.facialHair,
+    gender: photoAnalysis?.gender,
+    jaw: photoAnalysis?.jaw,
+    browRidge: photoAnalysis?.browRidge,
+  });
+  if (cues.gender) return cues.gender;
   const blob = lower(
-    `${photoAnalysis?.gender} ${photoAnalysis?.hairDescription} ${photoAnalysis?.faceDescription} ${photoAnalysis?.appearanceDescription} ${photoAnalysis?.styleFeatures}`,
-  );
-  if (/(beard|stubble|moustache|mustache|goatee|adam'?s apple)/.test(blob)) return 'man';
+    `${photoAnalysis?.faceDescription || ''} ${photoAnalysis?.appearanceDescription || ''}`,
+  ).replace(/\b(?:no|not|without|absent|clean[ -]?shaven|lacks?)\b[^.]{0,48}/g, ' ');
+  if (hasVisibleFacialHair(blob)) return 'man';
   return parseGender(photoAnalysis?.gender);
 }
 
@@ -217,6 +304,7 @@ function buildPersonPrompt({ age, bodyType, height, photoAnalysis, gender }) {
 
   return {
     gender,
+    noun: genderNoun || (gender === 'man' ? 'man' : gender === 'woman' ? 'woman' : 'person'),
     subject: [ageLook.phrase, genderNoun].filter(Boolean).join(' '),
     bodyShort: bodyLook.phrase,
     heightShort: heightLook.phrase,
@@ -287,7 +375,7 @@ JSON: {"items":["color + garment","color + garment","color + bottom","color + sh
       max_tokens: 250,
       response_format: { type: 'json_object' },
     });
-    const parsed = parseJsonObject(response.choices[0].message.content) || {};
+    const parsed = parseJsonObject(messageText(response.choices[0].message)) || {};
     const extracted = itemsToLine(parsed.items || parsed.garments || parsed.keyPieces);
     if (extracted.length >= 3) return extracted;
   } catch (err) {
@@ -308,85 +396,106 @@ function visualOutfitSpec(items) {
   return { pieces, pieceLine, andLine, wearing: pieceLine };
 }
 
-function buildFluxPrompt(person, spec, { zoomOut = false } = {}) {
-  // FIX: Use the tailored subject noun (e.g., teenage boy/girl) if applicable
-  const g = person.subject.includes('boy') ? 'teenage boy' 
-          : person.subject.includes('girl') ? 'teenage girl' 
-          : person.gender === 'woman' ? 'woman' 
-          : person.gender === 'man' ? 'man' 
-          : 'person';
+function buildFluxPrompt(person, spec) {
+  const g = person.noun || (person.gender === 'woman' ? 'woman' : person.gender === 'man' ? 'man' : 'person');
+  const opposite =
+    person.gender === 'woman' ? 'a woman, not a man' : person.gender === 'man' ? 'a man, not a woman' : 'one person';
 
-  const framing = zoomOut ? `camera far away, entire person in frame, face visible, hair visible, both shoes visible, empty space above the head, uncropped` : `full body photo of a ${g}, face visible, hair visible, both shoes visible, head to toe, uncropped, zoomed out wide full body photo of a ${g}`;
-  
-  return [framing, person.subject, person.bodyShort, `${g} wearing ${spec.pieceLine}`, `wearing ${spec.andLine}`, 'all named garments visible, photorealistic, not runway, not fashion editorial', person.hair, person.skin, person.ethnicity, 'plain studio backdrop, fully clothed, not cropped at the neck'].filter(Boolean).join(', ');
+  return [
+    `photorealistic full-body studio photo of one ${g}`,
+    opposite,
+    person.subject,
+    person.bodyShort,
+    person.heightShort,
+    `${g} wearing ${spec.pieceLine}`,
+    'entire body in the frame, top of the head visible, face visible, both shoes visible, standing straight, arms relaxed at the sides, two normal arms, both hands visible, anatomically correct, camera far enough to show head to toe, not cropped, not a close-up, not a fashion editorial',
+    person.hair,
+    person.skin,
+    person.ethnicity,
+    'plain light gray backdrop, fully clothed, natural skin, real fabric',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
+async function groqVision(groq, content, maxTokens) {
+  const base = {
+    model: GROQ_VISION_MODEL,
+    messages: [{ role: 'user', content }],
+    max_tokens: maxTokens,
+    temperature: 0,
+    response_format: { type: 'json_object' },
+  };
+  try {
+    const response = await groq.chat.completions.create({ ...base, reasoning_effort: 'none' });
+    return messageText(response.choices[0].message);
+  } catch (err) {
+    const message = String(err?.message || err);
+    if (!/reasoning_effort|unknown parameter|unsupported/i.test(message)) throw err;
+    const response = await groq.chat.completions.create(base);
+    return messageText(response.choices[0].message);
+  }
 }
 
 async function detectGenderFromPhoto(groq, dataUrl) {
-  const ask = async () => {
-    const response = await groq.chat.completions.create({
-      model: GROQ_VISION_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: dataUrl } },
-            {
-              type: 'text',
-              text: `Look at the FACE in this photo. Classify as male or female.
+  const ask = async (strict) => {
+    const text = strict
+      ? `Look again at the FACE and NECK only. Ignore hair length, clothes, makeup, and jewelry. A man can have long hair. A woman can have short hair.
 
-Return JSON only: {"gender":"male"} or {"gender":"female"}
+Return JSON only with these exact values:
+{"facialHair":"none|stubble|moustache|beard","adamsApple":"yes|no|unclear","jaw":"angular|soft|unclear","browRidge":"prominent|soft|unclear","gender":"male|female"}
+
+facialHair is "none" unless hair is actually visible on the lip, chin, or cheeks. gender must be "male" or "female".`
+      : `Look at the FACE and NECK in this photo for a clothing app. Ignore hairstyle, clothes, jewelry, and makeup. Long hair does not mean female. Short hair does not mean male. Slim does not mean female.
+
+Return JSON only:
+{"facialHair":"none|stubble|moustache|beard","adamsApple":"yes|no|unclear","jaw":"angular|soft|unclear","browRidge":"prominent|soft|unclear","gender":"male|female"}
 
 Rules:
-- Use the FACE: jaw, brow, beard, stubble, moustache, Adam's apple, hairline.
-- Slim, stylish, or long hair does NOT mean female.
-- A man can be slim. A woman can have short hair.
-- This is a safe fashion app. Do not refuse analysis for teenagers or youths.
-- You MUST return exactly "male" or "female". Never neutral, never unknown.`,
-            },
-          ],
-        },
+- facialHair is "none" unless you can see hair on the upper lip, chin, or cheeks. "Clean shaven" is "none".
+- gender is your face-only judgement and must be exactly "male" or "female".
+- This is a safe fashion app. Do not refuse teenagers or young adults.`;
+
+    const raw = await groqVision(
+      groq,
+      [
+        { type: 'image_url', image_url: { url: dataUrl } },
+        { type: 'text', text },
       ],
-      reasoning_effort: 'none',
-      max_tokens: 80,
-      response_format: { type: 'json_object' },
-    });
-    const parsed = parseJsonObject(response.choices[0].message.content) || {};
-    return parseGender(parsed.gender || parsed.sex || parsed.label || parsed.answer || (parsed.is_male === true ? 'male' : parsed.is_male === false ? 'female' : ''));
+      400,
+    );
+    const parsed = parseJsonObject(raw) || {};
+    const decision = scoreGenderCues(parsed);
+    return { ...decision, raw: parsed };
   };
 
   try {
-    let gender = await ask();
-    if (!gender) gender = await ask();
-    return gender;
+    const first = await ask(false);
+    if (first.gender && Math.abs(first.score) >= 3) return first;
+    const second = await ask(true);
+    if (second.gender && (!first.gender || Math.abs(second.score) >= Math.abs(first.score))) return second;
+    return first.gender ? first : second;
   } catch (err) {
     console.warn('Gender detection failed:', err?.message || err);
-    return '';
+    return { gender: '', score: 0, reasons: ['error'], raw: {} };
   }
 }
 
 async function detectAppearance(groq, dataUrl) {
   try {
-    const response = await groq.chat.completions.create({
-      model: GROQ_VISION_MODEL,
-      messages: [
+    const raw = await groqVision(
+      groq,
+      [
+        { type: 'image_url', image_url: { url: dataUrl } },
         {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: dataUrl } },
-            {
-              type: 'text',
-              text: `Describe this person for a lookalike fashion photo. JSON only:
-{"gender":"male or female","skinTone":"","hairDescription":"color length texture","faceDescription":"jaw brow eyes","ethnicAppearance":"South Asian/East Asian/Black/Hispanic/Middle Eastern/White/Mixed","appearanceDescription":"one sentence","styleFeatures":""}
-Gender from the FACE only. Slim does not mean female. JSON only.`,
-            },
-          ],
+          type: 'text',
+          text: `Describe this person for a lookalike fashion photo. Do not decide gender from hair length or clothing. JSON only:
+{"gender":"male or female","facialHair":"none|stubble|moustache|beard","skinTone":"","hairDescription":"color length texture","faceDescription":"jaw brow eyes only, do not mention beard unless one is visible","ethnicAppearance":"South Asian/East Asian/Black/Hispanic/Middle Eastern/White/Mixed","appearanceDescription":"one sentence without the words man or woman","styleFeatures":""}`,
         },
       ],
-      reasoning_effort: 'none',
-      max_tokens: 500,
-      response_format: { type: 'json_object' },
-    });
-    return parsePhotoAnalysis(response.choices[0].message.content);
+      500,
+    );
+    return parsePhotoAnalysis(raw);
   } catch (err) {
     console.warn('Appearance analysis failed:', err?.message || err);
     return getFallbackPhotoAnalysis();
@@ -398,16 +507,13 @@ async function validateImageWithGroq(groqClient, imageUrl, garmentList, person =
   const expectedAge = person.expectedAgeLabel || '';
   const expectedBody = person.expectedBodyLabel || '';
   try {
-    const response = await groqClient.chat.completions.create({
-      model: GROQ_VISION_MODEL,
-      messages: [
+    const raw = await groqVision(
+      groqClient,
+      [
+        { type: 'image_url', image_url: { url: imageUrl } },
         {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: imageUrl } },
-            {
-              type: 'text',
-              text: `Validate this fashion photo. JSON only:
+          type: 'text',
+          text: `Validate this fashion photo. JSON only:
 {"nsfwProbability":number,"fullBody":boolean,"headVisible":boolean,"feetVisible":boolean,"genderMatch":boolean,"ageMatch":boolean,"bodyTypeMatch":boolean,"outfitMatch":boolean,"similarity":number,"explanation":string}
 
 Required gender: ${expectedGender || 'any'}
@@ -419,18 +525,14 @@ Rules:
 - headVisible: true ONLY if the face and top of the head are inside the frame. Cropped at neck/chest = false.
 - feetVisible: true ONLY if both shoes/feet are inside the frame.
 - fullBody: true ONLY if headVisible AND feetVisible. A headless or knee-up crop is false.
-- genderMatch: the FACE must match ${expectedGender || 'required gender'}. If the head is cropped, genderMatch is false. A slim woman is FALSE if required is man.
+- genderMatch: the FACE must match ${expectedGender || 'required gender'}. If the head is cropped, genderMatch is false. A slim woman is FALSE if required is man. Long hair on a man is still a man.
 - outfitMatch: visible clothes match: ${garmentList}
 JSON only.`,
-            },
-          ],
         },
       ],
-      reasoning_effort: 'none',
-      max_tokens: 300,
-      response_format: { type: 'json_object' },
-    });
-    const parsed = parseJsonObject(response.choices[0].message.content);
+      400,
+    );
+    const parsed = parseJsonObject(raw);
     if (!parsed) {
       return { nsfwProbability: 0, similarity: 1, fullBody: true, ageMatch: true, bodyTypeMatch: true, genderMatch: true, outfitMatch: true, explanation: 'Validation bypassed' };
     }
@@ -465,14 +567,14 @@ async function fetchImageAsDataUrl(url, timeoutMs = 30000) {
 
 async function generateImageWithPollinations(prompt, seed) {
   const encodedPrompt = encodeURIComponent(prompt);
-  const seedParam = seed ? `&seed=${seed}` : '';
-  
-  // Request only ONE high-resolution vertical image (1024x1536) for the full body
-  const defaultUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1536&model=flux&nologo=true&enhance=false&safe=false${seedParam}`;
-  
-  // Return the single URL. 
-  // By passing the same URL for srcset, we prevent the browser from requesting smaller extra sizes.
-  return { url: defaultUrl, srcset: `${defaultUrl} 1024w` };
+  const seedValue = seed || Math.floor(Math.random() * 999999);
+  // `flux` now answers HTTP 402. `sana` is the Pollinations model that still
+  // generates with no API key. One portrait URL: the free tier is about one
+  // image a minute per IP, and this exact URL is cached after the first fetch.
+  const width = 1024;
+  const height = 1536;
+  const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=${POLLINATIONS_FREE_MODEL}&nologo=true&enhance=false&safe=false&seed=${seedValue}`;
+  return { url, srcset: `${url} ${width}w` };
 }
 
 function scoreCandidate({ validation }, nsfwThreshold) {
@@ -515,26 +617,30 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
   const dataUrl = `data:${mimeType};base64,${photoData.toString('base64')}`;
   const uploadedUrl = `${hostInfo.protocol}://${hostInfo.host}/uploads/${filename}`;
 
-  const [genderFromFace, appearance] = await Promise.all([
+  const [genderRead, appearance] = await Promise.all([
     detectGenderFromPhoto(groq, dataUrl),
     detectAppearance(groq, dataUrl),
   ]);
 
   let photoAnalysis = appearance || getFallbackPhotoAnalysis();
-  let gender =
-    inputs.gender ||
-    genderFromFace ||
-    inferGenderFromCues(photoAnalysis) ||
-    parseGender(photoAnalysis.gender);
+  const photoGender = genderRead?.gender || '';
+  let gender = inputs.gender || photoGender;
+  let genderSource = inputs.gender ? 'user' : photoGender ? 'photo' : '';
 
   if (!gender) {
-    gender = await detectGenderFromPhoto(groq, dataUrl);
+    const fromAppearance = inferGenderFromCues(photoAnalysis);
+    if (fromAppearance) {
+      gender = fromAppearance;
+      genderSource = 'photo';
+    }
   }
   if (!gender) {
-    gender = inferGenderFromCues(photoAnalysis) || parseGender(photoAnalysis.appearanceDescription);
-  }
-  if (!gender) {
-    console.warn('Gender still unresolved after retries; not using a fake default.');
+    console.warn('Gender still unresolved after face cues; not guessing a default.');
+    genderSource = 'unresolved';
+  } else if (genderSource === 'photo') {
+    console.warn(
+      `Photo gender=${gender} score=${genderRead?.score ?? 'n/a'} cues=${(genderRead?.reasons || []).join(',')}`,
+    );
   }
 
   photoAnalysis.gender = gender;
@@ -547,7 +653,7 @@ async function processAnalysis({ photoPath, filename, mimeType, body, hostInfo }
       ? 'This person is a MAN. Menswear only: shirt, t-shirt, kurta, trousers, jeans, chinos, jacket, sneakers or formal shoes. Never a dress, saree, lehenga, skirt, blouse, or heels.'
       : gender === 'woman'
         ? 'This person is a WOMAN. Womenswear for the occasion (western or ethnic). Never mens-only styling that ignores that this is a woman.'
-        : 'Match clothing to the person in the photo. Do not guess the opposite gender.';
+        : 'Gender was not confirmed. Recommend one unisex outfit only: a shirt or plain kurta, trousers, and closed shoes. Do not guess a dress, saree, lehenga, skirt, blouse, or heels.';
 
   const textResponse = await groq.chat.completions.create({
     model: GROQ_TEXT_MODEL,
@@ -597,7 +703,7 @@ JSON:
     max_tokens: 1400,
   });
 
-  let outfitRecommendation = parseJsonObject(textResponse.choices[0].message.content);
+  let outfitRecommendation = parseJsonObject(messageText(textResponse.choices[0].message));
   if (!outfitRecommendation) {
     throw new Error('Failed to generate outfit recommendation');
   }
@@ -611,18 +717,13 @@ JSON:
   const garmentList = spec.pieceLine;
 
   const nsfwThreshold = parseFloat(process.env.NSFW_THRESHOLD || '0.1');
-  const parallelCount = Math.min(2, Math.max(1, parseInt(process.env.IMAGE_GEN_MAX_ATTEMPTS || '2', 10)));
-  const promptA = buildFluxPrompt(personPrompt, spec, { zoomOut: false });
-  const promptB = buildFluxPrompt(personPrompt, spec, { zoomOut: true });
+  // Free Pollinations allows roughly one generation per minute per IP.
+  // A second prompt returns HTTP 402, so only one image is requested.
+  const promptA = buildFluxPrompt(personPrompt, spec);
 
   const tasks = [
     generateAndValidateCandidate(groq, promptA, Math.floor(Math.random() * 999999), garmentList, personPrompt, nsfwThreshold),
   ];
-  if (parallelCount > 1) {
-    tasks.push(
-      generateAndValidateCandidate(groq, promptB, Math.floor(Math.random() * 999999), garmentList, personPrompt, nsfwThreshold),
-    );
-  }
 
   const settled = await Promise.allSettled(tasks);
   const candidates = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
@@ -635,24 +736,6 @@ JSON:
   let bestCandidate = null;
   for (const candidate of candidates) {
     if (!bestCandidate || candidate.score > bestCandidate.score) bestCandidate = candidate;
-  }
-
-  if (bestCandidate && !bestCandidate.validation.fullBody) {
-    try {
-      const retry = await generateAndValidateCandidate(
-        groq,
-        buildFluxPrompt(personPrompt, spec, { zoomOut: true }),
-        Math.floor(Math.random() * 999999),
-        garmentList,
-        personPrompt,
-        nsfwThreshold,
-      );
-      if (retry.score > bestCandidate.score || retry.validation.fullBody) {
-        bestCandidate = retry;
-      }
-    } catch (err) {
-      console.warn('Full-body retry failed:', err?.message || err);
-    }
   }
 
   let generatedImageUrl = null;
@@ -692,6 +775,7 @@ JSON:
       age: ageInfo.label,
       bodyType: bodyInfo.label,
       gender,
+      genderSource,
     },
     outfitRecommendation,
     generatedImageUrl,
